@@ -62,11 +62,16 @@ app.get('/callback', function (req, res) {
   /*
    * Parse the response from the authorization server and get a token
    */
-  if (req.query['state'] != state) {
+  // on [Deny] button clicked
+  if (req.query.error) {
+    res.render('error', { error: req.query.error })
+    return
+  }
+  if (req.query.state != state) {
     res.render('error', { error: 'State value did not match' })
     return
   }
-  const code = req.query['code']
+  const code = req.query.code
   const form_data = querystring.stringify({
     grant_type: 'authorization_code',
     code: code,
