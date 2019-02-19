@@ -63,7 +63,7 @@ app.get('/callback', function (req, res) {
    * Parse the response from the authorization server and get a token
    */
   if (req.query['state'] != state) {
-    res.render('error', { error: 'State value did not match'})
+    res.render('error', { error: 'State value did not match' })
     return
   }
   const code = req.query['code']
@@ -81,6 +81,10 @@ app.get('/callback', function (req, res) {
     body: form_data,
     headers: headers
   })
+  if (tokRes.statusCode < 200 || tokRes.statusCode >= 300) {
+    res.render('error', { error: 'Server returned response code: ' + tokRes.statusCode })
+    return
+  }
   const body = JSON.parse(tokRes.getBody())
   access_token = body.access_token
   console.log('access_token', access_token)
@@ -94,6 +98,23 @@ app.get('/fetch_resource', function (req, res) {
   /*
    * Use the access token to call the resource server
    */
+  if (!access_token) {
+    res.render('error', { error: 'Missing access token.' })
+    return
+  }
+  const headers = {
+    'authorization': 'Bearer ' + access_token
+  }
+  // get resource from resource server
+  const resource = request('POST', protectedResource, { headers: headers })
+  if (resource.statusCode >= 200 && resource.statusCode < 300) {
+    const body = JSON.parse(resource.getBody())
+    res.render('data', { resource: body })
+    return
+  } else {
+    res.render('error', { error: 'Server returned response code: ' + resource.statusCode })
+    return
+  }
 })
 
 var buildUrl = function (base, options, hash) {
