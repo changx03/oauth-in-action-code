@@ -24,8 +24,15 @@ var resource = {
 
 var getAccessToken = function (req, res, next) {
   /*
-	 * Scan for an access token on the incoming request.
-	 */
+   * Scan for an access token on the incoming request.
+   */
+  let inToken;
+  const auth = req.headers['authorization']
+  if (auth && auth.toLowerCase().indexOf('bearer') === 0) { // get access_token from header
+    inToken = auth.slice('bearer '.length)
+  } else if (req.body && req.body.access_token) { // get access_token from body
+    inToken = req.body.access_token
+  }
 }
 
 app.options('/resource', cors())
@@ -35,8 +42,8 @@ app.options('/resource', cors())
  */
 app.post('/resource', cors(), function (req, res) {
   /*
-	 * Check to see if the access token was found or not
-	 */
+   * Check to see if the access token was found or not
+   */
 })
 
 var server = app.listen(9002, 'localhost', function () {
