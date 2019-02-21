@@ -17,10 +17,16 @@ app.set('json spaces', 4)
 app.use('/', express.static('files/protectedResource'))
 app.use(cors())
 
-var resource = {
-  name: 'Protected Resource',
-  description: 'This data has been protected by OAuth 2.0'
+const produce = {
+  fruit: ['apple', 'banana', 'kiwi'],
+  veggies: ['lettuce', 'onion', 'potato'],
+  meats: ['bacon', 'steak', 'chicken breast']
 }
+
+// var resource = {
+//   name: 'Protected Resource',
+//   description: 'This data has been protected by OAuth 2.0'
+// }
 
 var getAccessToken = function (req, res, next) {
   var inToken = null
@@ -65,18 +71,25 @@ function requireAccessToken (req, res, next) {
   }
 }
 
-app.get('/produce', getAccessToken, requireAccessToken, function (req, res) {
-  var produce = {
-    fruit: ['apple', 'banana', 'kiwi'],
-    veggies: ['lettuce', 'onion', 'potato'],
-    meats: ['bacon', 'steak', 'chicken breast']
-  }
+function hasRight (req, scope) {
+  return __.contains(req.access_token.scope, scope)
+}
 
+app.get('/produce', getAccessToken, requireAccessToken, function (req, res) {
   /*
    * Add different kinds of produce based on the incoming token's scope
    */
-
-  res.json(produce)
+  let resProduce = { fruit: [], veggies: [], meats: [] }
+  if (hasRight(req, 'fruit')) {
+    resProduce.fruit = produce.fruit.slice()
+  }
+  if (hasRight(req, 'veggie')) {
+    resProduce.veggies = produce.veggies.slice()
+  }
+  if (hasRight(req, 'meats')) {
+    resProduce.meats = produce.meats.slice()
+  }
+  res.json(resProduce)
 })
 
 var server = app.listen(9002, 'localhost', function () {
