@@ -95,7 +95,7 @@ app.get('/callback', function (req, res) {
     'Content-Type': 'application/x-www-form-urlencoded',
     Authorization:
       'Basic ' +
-      new Buffer(
+      Buffer.from(
         querystring.escape(client.client_id) +
           ':' +
           querystring.escape(client.client_secret)

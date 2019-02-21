@@ -1,11 +1,11 @@
-var express = require('express')
-var bodyParser = require('body-parser')
-var cons = require('consolidate')
-var nosql = require('nosql').load('database.nosql')
-var __ = require('underscore')
-var cors = require('cors')
+const express = require('express')
+const bodyParser = require('body-parser')
+const cons = require('consolidate')
+const nosql = require('nosql').load('database.nosql')
+const cors = require('cors')
+const _ = require('underscore');
 
-var app = express()
+const app = express()
 
 app.use(bodyParser.urlencoded({ extended: true })) // support form-encoded bodies (for bearer tokens)
 
@@ -44,7 +44,7 @@ var getAccessToken = function (req, res, next) {
       }
       if (result) {
         console.log('We found a matching token: %s for client: %s', result.access_token, result.client_id)
-        req.access_token = result.access_token
+        req.access_token = result
       } else {
         console.log('No matching token was found')
       }
@@ -63,32 +63,53 @@ var requireAccessToken = function (req, res, next) {
 
 var savedWords = []
 
+function insufficientScopeResponse (res, scope) {
+  res.set('WWW-Authenticate', `Bearer realm=localhost:9002, error="insufficient_scope", scope="${scope}"`)
+  res.status(403).end()
+}
+
+function hasRight(req, right) {
+  return _.contains(req.access_token.scope, right)
+}
+
 // parse our middleware
 app.all('*', getAccessToken, requireAccessToken)
 
 app.get('/words', function (req, res) {
   /*
-	 * Make this function require the "read" scope
-	 */
-  res.json({ words: savedWords.join(' '), timestamp: Date.now() })
+   * Make this function require the "read" scope
+   */
+  if (_.contains(req.access_token.scope, 'read')) {
+    res.json({ words: savedWords.join(' '), timestamp: Date.now() })
+  } else {
+    insufficientScopeResponse(res, 'read');
+  }
 })
 
 app.post('/words', function (req, res) {
   /*
-	 * Make this function require the "write" scope
-	 */
-  if (req.body.word) {
-    savedWords.push(req.body.word)
+   * Make this function require the "write" scope
+   */
+  if (hasRight(req, 'write')) {
+    if (req.body.word) {
+      savedWords.push(req.body.word)
+    }
+    res.status(201).json({ words: savedWords.join(' '), timestamp: Date.now() })
+  } else {
+    insufficientScopeResponse(res, 'write');
   }
-  res.status(201).end()
 })
 
 app.delete('/words', function (req, res) {
   /*
-	 * Make this function require the "delete" scope
-	 */
-  savedWords.pop()
-  res.status(204).end()
+   * Make this function require the "delete" scope
+   */
+  if (hasRight(req, 'delete')) {
+    savedWords.pop()
+    res.status(204).end()
+  } else {
+    insufficientScopeResponse(res, 'delete');
+  }
 })
 
 var server = app.listen(9002, 'localhost', function () {
