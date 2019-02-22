@@ -53,6 +53,10 @@ app.set('view engine', 'html')
 app.set('views', 'files/authorizationServer')
 app.set('json spaces', 4)
 
+/**
+ * constants
+ */
+
 // authorization server information
 var authServer = {
   authorizationEndpoint: 'http://localhost:9001/authorize',
@@ -73,11 +77,51 @@ var codes = {}
 // use session instead
 // var requests = {}
 
+/**
+ * utility functions
+ */
+
 var getClient = function (clientId) {
   return _.find(clients, function (client) {
     return client.client_id == clientId
   })
 }
+
+var buildUrl = function (base, options, hash) {
+  var newUrl = url.parse(base, true)
+  delete newUrl.search
+  if (!newUrl.query) {
+    newUrl.query = {}
+  }
+  _.each(options, function (value, key, list) {
+    newUrl.query[key] = value
+  })
+  if (hash) {
+    newUrl.hash = hash
+  }
+
+  return url.format(newUrl)
+}
+
+var decodeClientCredentials = function (auth) {
+  var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64')
+    .toString()
+    .split(':')
+  var clientId = querystring.unescape(clientCredentials[0])
+  var clientSecret = querystring.unescape(clientCredentials[1])
+  return { id: clientId, secret: clientSecret }
+}
+
+function redirectWithErr (res, msg) {
+  const urlParsed = buildUrl(query['redirect_uri'], {
+    error: msg
+  })
+  res.redirect(urlParsed)
+}
+
+/**
+ * routes
+ */
 
 app.get('/', function (req, res) {
   res.render('index', { clients: clients, authServer: authServer })
@@ -109,6 +153,28 @@ app.post('/approve', function (req, res) {
    * Process the results of the approval page, authorize the client
    */
   console.log('session:', req.session)
+  const reqid = req.body.reqid
+  if (!req.session.client || !req.session.client.query) {
+    res.render('error', { error: 'No matching authorization request' })
+    return
+  }
+  const query = req.session.client.query
+  req.session.destroy()
+  if (req.body.approve) { // user approved access
+    if (query['response_type'] === 'code') {  // now, issue a new authorization code
+      const code = randomString.generate(8) // authorization code is not access_token
+      codes[code] = { request: query }
+      const urlParsed = buildUrl(query['redirect_uri'], {
+        code: code,
+        state: query.state
+      })
+      res.redirect(urlParsed)
+    } else {
+      redirectWithErr(res, 'unsupported_response_type')
+    }
+  } else { // user denied access
+    redirectWithErr(res, 'access_denied')
+  }
 })
 
 app.post('/token', function (req, res) {
@@ -116,31 +182,6 @@ app.post('/token', function (req, res) {
    * Process the request, issue an access token
    */
 })
-
-var buildUrl = function (base, options, hash) {
-  var newUrl = url.parse(base, true)
-  delete newUrl.search
-  if (!newUrl.query) {
-    newUrl.query = {}
-  }
-  _.each(options, function (value, key, list) {
-    newUrl.query[key] = value
-  })
-  if (hash) {
-    newUrl.hash = hash
-  }
-
-  return url.format(newUrl)
-}
-
-var decodeClientCredentials = function (auth) {
-  var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64')
-    .toString()
-    .split(':')
-  var clientId = querystring.unescape(clientCredentials[0])
-  var clientSecret = querystring.unescape(clientCredentials[1])
-  return { id: clientId, secret: clientSecret }
-}
 
 app.use('/', express.static('files/authorizationServer'))
 
