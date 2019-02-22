@@ -1,15 +1,50 @@
-var express = require('express')
-var url = require('url')
-var bodyParser = require('body-parser')
-var randomstring = require('randomstring')
-var cons = require('consolidate')
-var nosql = require('nosql').load('database.nosql')
-var querystring = require('querystring')
-var __ = require('underscore')
-__.string = require('underscore.string')
+const express = require('express')
+const url = require('url')
+const bodyParser = require('body-parser')
+const randomString = require('randomstring')
+const cons = require('consolidate')
+const nosql = require('nosql').load('database.nosql')
+const querystring = require('querystring')
+const session = require('express-session')
+const crypto = require('crypto')
+const _ = require('underscore')
+_.string = require('underscore.string')
 
-var app = express()
+function uuidFromBytes (rnd) {
+  rnd[6] = (rnd[6] & 0x0f) | 0x40
+  rnd[8] = (rnd[8] & 0x3f) | 0x80
+  rnd = rnd.toString('hex').match(/(.{8})(.{4})(.{4})(.{4})(.{12})/)
+  rnd.shift()
+  return rnd.join('-')
+}
 
+function genuuid () {
+  return uuidFromBytes(crypto.randomBytes(16))
+}
+
+const app = express()
+const sess = {
+  genid: function () {
+    return genuuid()
+  },
+  secret: 'awesome_cat',
+  resave: false,
+  saveUninitialized: true,
+  cookie: { maxAge: 2 * 24 * 3600 * 1000 /* 2 day */ }
+}
+
+/**
+ * Secure cookie only works over TLS.
+ * If your site is HTTP, the cookie will not be set
+ * https://github.com/expressjs/session
+ */
+console.log('NODE_ENV: %s', app.get('env'))
+if (app.get('env') === 'production') {
+  app.set('trust proxy', 1)
+  sess.cookie.secure = true
+}
+
+app.use(session(sess))
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true })) // support form-encoded bodies (for the token endpoint)
 
@@ -26,17 +61,20 @@ var authServer = {
 
 // client information
 var clients = [
-  /*
-   * Enter client information here
-   */
+  {
+    client_id: 'oauth-client-1',
+    client_secret: 'oauth-client-secret-1',
+    redirect_uris: ['http://localhost:9000/callback']
+  }
 ]
 
 var codes = {}
 
-var requests = {}
+// use session instead
+// var requests = {}
 
 var getClient = function (clientId) {
-  return __.find(clients, function (client) {
+  return _.find(clients, function (client) {
     return client.client_id == clientId
   })
 }
@@ -49,12 +87,28 @@ app.get('/authorize', function (req, res) {
   /*
    * Process the request, validate the client, and send the user to the approval page
    */
+  const client = getClient(req.query['client_id'])
+  if (!client) {
+    res.render('error', { error: 'Unknown client' })
+    return
+  } else if (!_.contains(client['redirect_uris'], req.query['redirect_uri'])) {
+    res.render('error', { error: 'Invalid redirect URI' })
+    return
+  }
+  const reqid = randomString.generate(8)
+  // requests[reqid] = req.query
+  req.session.client = {
+    reqid,
+    query: req.query
+  }
+  res.render('approve', { client: client, reqid })
 })
 
 app.post('/approve', function (req, res) {
   /*
    * Process the results of the approval page, authorize the client
    */
+  console.log('session:', req.session)
 })
 
 app.post('/token', function (req, res) {
@@ -69,7 +123,7 @@ var buildUrl = function (base, options, hash) {
   if (!newUrl.query) {
     newUrl.query = {}
   }
-  __.each(options, function (value, key, list) {
+  _.each(options, function (value, key, list) {
     newUrl.query[key] = value
   })
   if (hash) {
