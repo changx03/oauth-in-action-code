@@ -49,7 +49,9 @@ var getAccessToken = function (req, res, next) {
           'We found a matching token: %s for client: %s with scope:',
           result.access_token,
           result.client_id,
-          result.scope.join(' ')
+          Object.prototype.toString.call(result.scope) === '[object Array]'
+            ? result.scope.join(' ')
+            : ''
         )
         req.access_token = result
       } else {

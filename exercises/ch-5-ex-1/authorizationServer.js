@@ -112,11 +112,13 @@ var decodeClientCredentials = function (auth) {
   return { id: clientId, secret: clientSecret }
 }
 
-function redirectWithErr (res, msg) {
-  const urlParsed = buildUrl(query['redirect_uri'], {
-    error: msg
-  })
-  res.redirect(urlParsed)
+function generateToken () {
+  const accessToken = randomString.generate()
+  const refreshToken = randomString.generate()
+  return {
+    access_token: accessToken,
+    refresh_token: refreshToken
+  }
 }
 
 /**
@@ -135,10 +137,12 @@ app.get('/authorize', function (req, res) {
   if (!client) {
     res.render('error', { error: 'Unknown client' })
     return
-  } else if (!_.contains(client['redirect_uris'], req.query['redirect_uri'])) {
+  }
+  if (!_.contains(client['redirect_uris'], req.query['redirect_uri'])) {
     res.render('error', { error: 'Invalid redirect URI' })
     return
   }
+
   const reqid = randomString.generate(8)
   // requests[reqid] = req.query
   req.session.client = {
@@ -160,8 +164,10 @@ app.post('/approve', function (req, res) {
   }
   const query = req.session.client.query
   req.session.destroy()
-  if (req.body.approve) { // user approved access
-    if (query['response_type'] === 'code') {  // now, issue a new authorization code
+  if (req.body.approve) {
+    // user approved access
+    if (query['response_type'] === 'code') {
+      // now, issue a new authorization code
       const code = randomString.generate(8) // authorization code is not access_token
       codes[code] = { request: query }
       const urlParsed = buildUrl(query['redirect_uri'], {
@@ -170,10 +176,17 @@ app.post('/approve', function (req, res) {
       })
       res.redirect(urlParsed)
     } else {
-      redirectWithErr(res, 'unsupported_response_type')
+      const urlParsed = buildUrl(query['redirect_uri'], {
+        error: msg
+      })
+      res.redirect(urlParsed)
     }
-  } else { // user denied access
-    redirectWithErr(res, 'access_denied')
+  } else {
+    // user denied access
+    const urlParsed = buildUrl(query['access_denied'], {
+      error: msg
+    })
+    res.redirect(urlParsed)
   }
 })
 
@@ -181,6 +194,84 @@ app.post('/token', function (req, res) {
   /*
    * Process the request, issue an access token
    */
+  // check header
+  const auth = req.headers['authorization']
+  let clientId, clientSecret
+  if (auth) {
+    const clientCredentials = decodeClientCredentials(auth)
+    clientId = clientCredentials.id
+    clientSecret = clientCredentials.secret
+  }
+  // check body
+  if (req.body['client_id']) {
+    if (clientId) {
+      // client credential should not in both place
+      res.status(401).json({ error: 'invalid_client' })
+      return
+    }
+    clientId = req.body['client_id']
+    clientSecret = req.body['client_secret']
+  }
+  // find client in DB (constant variable in this demo)
+  const client = getClient(clientId)
+  if (!client) {
+    res.status(401).json({ error: 'invalid_client' })
+    return
+  }
+  // check client_secret
+  if (client['client_secret'] !== clientSecret) {
+    redirectWithErr(res, 'invalid_client')
+    res.status(401).json({ error: 'invalid_client' })
+    return
+  }
+  // check grant_type
+  const grantType = req.body['grant_type']
+  if (grantType === 'authorization_code') {
+    const code = codes[req.body.code]
+    if (!code) {
+      res.status(400).json({ error: 'invalid_grant' })
+      return
+    }
+    delete codes[req.body.code]
+    // check client_id
+    if (code.request['client_id'] !== clientId) {
+      res.status(400).json({ error: 'invalid_grant' })
+      return
+    }
+    // return access_token to client
+    const tokens = generateToken()
+    nosql.insert({
+      client_id: clientId,
+      ...tokens
+    })
+    res.status(200).json({ token_type: 'Bearer', ...tokens })
+  } else if (grantType === 'refresh_token') {
+    // find matching refresh_token from DB
+    nosql.one().make(function (builder) {
+      builder.where('refresh_token', req.body['refresh_token'])
+      builder.callback(function (err, value) {
+        if (err) {
+          console.error('%s: %s', err.name, err.message)
+          res.status(500).end()
+          return
+        }
+        // not found
+        if (!value || value['client_id'] !== clientId) {
+          res.status(400).json({ error: 'invalid_grant' })
+          return
+        }
+        const tokens = generateToken()
+        nosql.insert({
+          client_id: clientId,
+          ...tokens
+        })
+        res.status(200).json({ token_type: 'Bearer', ...tokens })
+      })
+    })
+  } else {
+    // unknown grant_type
+    res.status(400).json({ error: 'unsupported_grant_type' })
+  }
 })
 
 app.use('/', express.static('files/authorizationServer'))
