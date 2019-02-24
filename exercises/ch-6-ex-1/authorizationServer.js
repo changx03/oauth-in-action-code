@@ -41,7 +41,7 @@ var requests = {}
 
 var getClient = function (clientId) {
   return __.find(clients, function (client) {
-    return client.client_id == clientId
+    return client.client_id === clientId
   })
 }
 
@@ -93,7 +93,7 @@ app.post('/approve', function (req, res) {
   }
 
   if (req.body.approve) {
-    if (query.response_type == 'code') {
+    if (query.response_type === 'code') {
       // user approved access
 
       var rscope = getScopesFromForm(req.body)
@@ -122,6 +122,27 @@ app.post('/approve', function (req, res) {
       /*
      * Implement response_type=token here
       */
+    } else if (query.response_type === 'token') {
+      const reqScope = getScopesFromForm(req.body)
+      const client = getClient(query['client_id'])
+      const clientScope = client.scope ? client.scope.split(' ') : []
+      if (__.difference(reqScope, clientScope).length > 0) {
+        const urlParsed = new URL(query['redirect_uri'])
+        urlParsed.searchParams.set('error', 'invalid_scope')
+        res.redirect(urlParsed.href)
+        return
+      }
+      const accessToken = randomstring.generate()
+      nosql.insert({ access_token: accessToken, client_id: client['client_id'], scope: reqScope })
+      const urlParsed = new URL(query['redirect_uri'])
+      urlParsed.searchParams.set('access_token', accessToken)
+      urlParsed.searchParams.set('token_type', 'Bearer')
+      urlParsed.searchParams.set('scope', reqScope.join(' '))
+      if (query.state) {
+        urlParsed.searchParams.set('state', query.state)
+      }
+      res.redirect(urlParsed.href)
+      return
     } else {
       // we got a response type we don't understand
       var urlParsed = buildUrl(query.redirect_uri, {
@@ -177,12 +198,12 @@ app.post('/token', function (req, res) {
     return
   }
 
-  if (req.body.grant_type == 'authorization_code') {
+  if (req.body.grant_type === 'authorization_code') {
     var code = codes[req.body.code]
 
     if (code) {
       delete codes[req.body.code] // burn our code, it's been used
-      if (code.request.client_id == clientId) {
+      if (code.request.client_id === clientId) {
         var access_token = randomstring.generate()
         var refresh_token = randomstring.generate()
 
@@ -220,7 +241,7 @@ app.post('/token', function (req, res) {
       console.log('Unknown code, %s', req.body.code)
       res.status(400).json({ error: 'invalid_grant' })
     }
-  } else if (req.body.grant_type == 'refresh_token') {
+  } else if (req.body.grant_type === 'refresh_token') {
     nosql.one().make(function (builder) {
       builder.where('refresh_token', req.body['refresh_token'])
       builder.callback(function (err, value) {
