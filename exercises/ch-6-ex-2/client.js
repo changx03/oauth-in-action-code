@@ -24,14 +24,11 @@ var authServer = {
 }
 
 // client information
-
 var client = {
   client_id: 'oauth-client-1',
   client_secret: 'oauth-client-secret-1',
   scope: 'foo bar'
 }
-
-// var client = {};
 
 var protectedResource = 'http://localhost:9002/resource'
 
@@ -39,6 +36,7 @@ var state = null
 
 var access_token = null
 var scope = null
+var refresh_token = null
 
 app.get('/', function (req, res) {
   res.render('index', {
@@ -49,12 +47,30 @@ app.get('/', function (req, res) {
 })
 
 app.get('/authorize', function (req, res) {
-  access_token = null
-  scope = null
-
   /*
    * Implement the client credentials flow here
    */
+  const formData = qs.stringify({
+    grant_type: 'client_credentials',
+    scope: client.scope
+  })
+  const headers = {
+    'Content_Type': 'application/x-www-form-urlencoded',
+    'Authorization': 'Basic ' + encodeClientCredentials(client['client_id'], client['client_secret'])
+  }
+  const tokenResponse = request('POST', authServer.tokenEndpoint, {
+    body: formData,
+    headers
+  })
+  console.log('tokenResponse', tokenResponse)
+  if (tokenResponse.statusCode >= 200 && tokenResponse.statusCode < 300) {
+    const body = JSON.parse(tokenResponse.getBody())
+    access_token = body.access_token
+    scope = body.scope
+    res.render('index', { access_token, scope })
+  } else {
+    res.render('error', { error: 'Unable to fetch access token, server response: ' + tokenResponse.statusCode })
+  }
 })
 
 app.get('/fetch_resource', function (req, res) {

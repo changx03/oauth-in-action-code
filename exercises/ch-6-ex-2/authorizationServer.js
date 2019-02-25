@@ -140,6 +140,8 @@ app.post('/token', function (req, res) {
     var clientId = clientCredentials.id
     var clientSecret = clientCredentials.secret
   }
+  // TODO: Unknown grant type undefined
+  console.log('body', req.body)
 
   // otherwise, check the post body
   if (req.body.client_id) {
@@ -149,7 +151,6 @@ app.post('/token', function (req, res) {
       res.status(401).json({ error: 'invalid_client' })
       return
     }
-
     var clientId = req.body.client_id
     var clientSecret = req.body.client_secret
   }
@@ -259,6 +260,26 @@ app.post('/token', function (req, res) {
         res.status(200).json(tokenResponse)
       })
     })
+  } else if (req.body.grant_type === 'client_credentials') {
+    const reqScope = req.body.scope ? req.body.scope.split(' ') : null
+    const clientScope = client.scope ? client.scope.split(' ') : null
+    if (__.difference(reqScope, clientScope).length > 0) {
+      res.status(400).json({ error: 'invalid_scope' })
+      return
+    }
+    const accessToken = randomstring.generate()
+    const tokenResponse = {
+      access_token: accessToken,
+      token_type: 'Bearer',
+      scope: reqScope.join(' ')
+    }
+    nosql.insert({
+      access_token: accessToken,
+      client_id: clientId,
+      scope: reqScope.join(' ')
+    })
+    res.status(200).json(tokenResponse)
+    return
   } else {
     console.log('Unknown grant type %s', req.body.grant_type)
     res.status(400).json({ error: 'unsupported_grant_type' })
