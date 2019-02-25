@@ -72,6 +72,6 @@ app.post('/resource', cors(), getAccessToken, function (req, res) {
 var server = app.listen(9002, 'localhost', function () {
   var host = server.address().address
   var port = server.address().port
-
+  console.log('ch-6-ex-2')
   console.log('OAuth Resource Server is listening at http://%s:%s', host, port)
 })

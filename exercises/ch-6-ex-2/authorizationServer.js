@@ -324,7 +324,7 @@ nosql.clear()
 var server = app.listen(9001, 'localhost', function () {
   var host = server.address().address
   var port = server.address().port
-
+  console.log('ch-6-ex-2')
   console.log(
     'OAuth Authorization Server is listening at http://%s:%s',
     host,

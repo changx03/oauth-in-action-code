@@ -32,6 +32,11 @@ var client = {
 
 var protectedResource = 'http://localhost:9002/resource'
 
+/**
+ * PROBLEM:
+ * This implementation, all the client instance will share the same access_token! Big mistake!
+ * Use session instead! 
+ */
 var state = null
 var access_token = null
 var scope = null
@@ -73,7 +78,9 @@ app.get('/authorize', function (req, res) {
     const body = JSON.parse(tokenResponse.getBody())
     access_token = body.access_token
     scope = body.scope
-    res.render('index', { access_token, scope })
+    // this will leave route at '/authorize'
+    // res.render('index', { access_token: access_token, scope: scope })
+    res.redirect('/')
   } else {
     res.render('error', { error: 'Unable to fetch access token, server response: ' + tokenResponse.statusCode })
   }
@@ -116,5 +123,6 @@ app.use('/', express.static('files/client'))
 var server = app.listen(9000, 'localhost', function () {
   var host = server.address().address
   var port = server.address().port
+  console.log('ch-6-ex-2')
   console.log('OAuth Client is listening at http://%s:%s', host, port)
 })
