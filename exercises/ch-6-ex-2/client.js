@@ -33,7 +33,6 @@ var client = {
 var protectedResource = 'http://localhost:9002/resource'
 
 var state = null
-
 var access_token = null
 var scope = null
 var refresh_token = null
@@ -47,6 +46,12 @@ app.get('/', function (req, res) {
 })
 
 app.get('/authorize', function (req, res) {
+  state = null
+  access_token = null
+  scope = null
+  refresh_token = null
+  state = randomstring.generate()
+
   /*
    * Implement the client credentials flow here
    */
@@ -54,15 +59,16 @@ app.get('/authorize', function (req, res) {
     grant_type: 'client_credentials',
     scope: client.scope
   })
+  // Content-Type is important for http request!
   const headers = {
-    'Content_Type': 'application/x-www-form-urlencoded',
+    'Content-Type': 'application/x-www-form-urlencoded',
     'Authorization': 'Basic ' + encodeClientCredentials(client['client_id'], client['client_secret'])
   }
   const tokenResponse = request('POST', authServer.tokenEndpoint, {
     body: formData,
-    headers
+    headers: headers
   })
-  console.log('tokenResponse', tokenResponse)
+
   if (tokenResponse.statusCode >= 200 && tokenResponse.statusCode < 300) {
     const body = JSON.parse(tokenResponse.getBody())
     access_token = body.access_token

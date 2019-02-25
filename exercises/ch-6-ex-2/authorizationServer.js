@@ -140,8 +140,6 @@ app.post('/token', function (req, res) {
     var clientId = clientCredentials.id
     var clientSecret = clientCredentials.secret
   }
-  // TODO: Unknown grant type undefined
-  console.log('body', req.body)
 
   // otherwise, check the post body
   if (req.body.client_id) {
@@ -215,10 +213,6 @@ app.post('/token', function (req, res) {
       console.log('Unknown code, %s', req.body.code)
       res.status(400).json({ error: 'invalid_grant' })
     }
-
-    /*
-     * Implement the client credentials grant type
-     */
   } else if (req.body.grant_type == 'refresh_token') {
     nosql.one().make(function (builder) {
       builder.where('refresh_token', req.body['refresh_token'])
@@ -261,6 +255,9 @@ app.post('/token', function (req, res) {
       })
     })
   } else if (req.body.grant_type === 'client_credentials') {
+    /*
+     * Implement the client credentials grant type
+     */
     const reqScope = req.body.scope ? req.body.scope.split(' ') : null
     const clientScope = client.scope ? client.scope.split(' ') : null
     if (__.difference(reqScope, clientScope).length > 0) {
