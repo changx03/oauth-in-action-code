@@ -1,0 +1,28 @@
+{
+  "name": "com.manning.oauthinaction.nativeclient",
+  "version": "0.0.1",
+  "displayName": "Native Client Example",
+  "cordova": {
+    "platforms": [
+      "android",
+      "browser"
+    ],
+    "plugins": {
+      "cordova-plugin-whitelist": {},
+      "cordova-plugin-inappbrowser": {},
+      "cordova-plugin-customurlscheme": {
+        "URL_SCHEME": "com.oauthinaction.mynativeapp",
+        "ANDROID_SCHEME": " ",
+        "ANDROID_HOST": " ",
+        "ANDROID_PATHPREFIX": "/"
+      }
+    }
+  },
+  "dependencies": {
+    "cordova-android": "^7.1.4",
+    "cordova-browser": "^5.0.4",
+    "cordova-plugin-customurlscheme": "^4.3.0",
+    "cordova-plugin-inappbrowser": "^3.0.0",
+    "cordova-plugin-whitelist": "^1.3.3"
+  }
+}

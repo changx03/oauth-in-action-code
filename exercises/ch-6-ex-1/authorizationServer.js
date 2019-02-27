@@ -257,7 +257,7 @@ app.post('/token', function (req, res) {
         } else {
           if (value['client_id'] != clientId) {
             nosql.remove().make(function (builder) {
-              builder.where('refresh_token', value['refresh_token'])
+              builder.where('refresh_token', req.body['refresh_token'])
               builder.callback(function (err, count) {
                 if (err) {
                   console.error('%s: %s', err.name, err.message)
