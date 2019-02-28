@@ -10,6 +10,7 @@ var request = require('sync-request')
 var __ = require('underscore')
 var base64url = require('base64url')
 var jose = require('jsrsasign')
+var cors = require('cors')
 
 var app = express()
 
@@ -32,8 +33,7 @@ var sharedTokenSecret = 'shared token secret!'
 var rsaKey = {
   alg: 'RS256',
   e: 'AQAB',
-  n:
-    'p8eP5gL1H_H9UNzCuQS-vNRVz3NWxZTHYk1tG9VpkfFjWNKG3MFTNZJ1l5g_COMm2_2i_YhQNH8MJ_nQ4exKMXrWJB4tyVZohovUxfw-eLgu1XQ8oYcVYW8ym6Um-BkqwwWL6CXZ70X81YyIMrnsGTyTV6M8gBPun8g2L8KbDbXR1lDfOOWiZ2ss1CRLrmNM-GRp3Gj-ECG7_3Nx9n_s5to2ZtwJ1GS1maGjrSZ9GRAYLrHhndrL_8ie_9DS2T-ML7QNQtNkg2RvLv4f0dpjRYI23djxVtAylYK4oiT_uEMgSkc4dxwKwGuBxSO0g9JOobgfy0--FUHHYtRi0dOFZw',
+  n: 'p8eP5gL1H_H9UNzCuQS-vNRVz3NWxZTHYk1tG9VpkfFjWNKG3MFTNZJ1l5g_COMm2_2i_YhQNH8MJ_nQ4exKMXrWJB4tyVZohovUxfw-eLgu1XQ8oYcVYW8ym6Um-BkqwwWL6CXZ70X81YyIMrnsGTyTV6M8gBPun8g2L8KbDbXR1lDfOOWiZ2ss1CRLrmNM-GRp3Gj-ECG7_3Nx9n_s5to2ZtwJ1GS1maGjrSZ9GRAYLrHhndrL_8ie_9DS2T-ML7QNQtNkg2RvLv4f0dpjRYI23djxVtAylYK4oiT_uEMgSkc4dxwKwGuBxSO0g9JOobgfy0--FUHHYtRi0dOFZw',
   kty: 'RSA',
   kid: 'authserver'
 }
@@ -61,13 +61,15 @@ var getAccessToken = function (req, res, next) {
   }
 
   console.log('Incoming token: %s', inToken)
-  nosql.one(
-    function (token) {
-      if (token.access_token == inToken) {
-        return token
+
+  nosql.one().make(function (builder) {
+    builder.where('access_token', inToken)
+    builder.callback(function (err, token) {
+      if (err) {
+        res.status(500).end()
+        return
       }
-    },
-    function (err, token) {
+
       if (token) {
         console.log('We found a matching token: %s', inToken)
       } else {
@@ -75,8 +77,8 @@ var getAccessToken = function (req, res, next) {
       }
       req.access_token = token
       next()
-    }
-  )
+    })
+  })
 }
 
 var requireAccessToken = function (req, res, next) {
@@ -87,7 +89,8 @@ var requireAccessToken = function (req, res, next) {
   }
 }
 
-app.get('/helloWorld', getAccessToken, function (req, res) {
+app.options('/helloworld', cors())
+app.get('/helloWorld', cors(), getAccessToken, requireAccessToken, function (req, res) {
   if (req.access_token) {
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('X-XSS-Protection', '1; mode=block')

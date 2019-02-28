@@ -470,29 +470,41 @@ app.post('/token', function (req, res) {
     console.log('Issuing access token %s', access_token)
     res.status(200).json(token_response)
   } else if (req.body.grant_type == 'refresh_token') {
-    nosql.all(
-      function (token) {
-        return token.refresh_token == req.body.refresh_token
-      },
-      function (err, tokens) {
-        if (tokens.length == 1) {
-          var token = tokens[0]
-          if (token.client_id != clientId) {
-            console.log(
-              'Invalid client using a refresh token, expected %s got %s',
-              token.client_id,
-              clientId
-            )
-            nosql.remove(
-              function (found) {
-                return found == token
-              },
-              function () {}
-            )
-            res.status(400).end()
-            return
+    nosql.one().make(function (builder) {
+      builder.where('refresh_token', req.body['refresh_token'])
+      builder.callback(function (err, value) {
+        if (err) {
+          console.error('%s: %s', err.name, err.message)
+          res.status(500).end()
+          return
+        }
+
+        // not found
+        if (!value) {
+          res.status(400).json({ error: 'invalid_grant' })
+          return
+        } else {
+          // unknown client
+          if (value['client_id'] !== clientId) {
+            console.log('Invalid client using a refresh token, expected %s got %s', value['client_id'], clientId)
+            // remove the compromised refresh_token
+            nosql.remove().make(function (builder) {
+              builder.where('refresh_token', req.body['refresh_token'])
+              builder.callback(function (err, count) {
+                if (err) {
+                  console.error('%s: %s', err.name, err.message)
+                  res.status(500).end()
+                  return
+                }
+                console.log('remove %d with client_id: %s', count, value['client_id'])
+                res.status(400).json({ error: 'invalid_grant' })
+                return
+              })
+            })
           }
-          console.log('We found a matching token: %s', req.body.refresh_token)
+
+          // issue new access_token
+          console.log('We found a matching token: %s', req.body['refresh_token'])
           var access_token = randomstring.generate()
           var token_response = {
             access_token: access_token,
@@ -500,18 +512,11 @@ app.post('/token', function (req, res) {
             refresh_token: req.body.refresh_token
           }
           nosql.insert({ access_token: access_token, client_id: clientId })
-          console.log(
-            'Issuing access token %s for refresh token %s',
-            access_token,
-            req.body.refresh_token
-          )
+          console.log('Issuing access token %s for refresh token %s', access_token, req.body.refresh_token)
           res.status(200).json(token_response)
-        } else {
-          console.log('No matching token was found.')
-          res.status(401).end()
         }
-      }
-    )
+      })
+    })
   } else if (req.body.grant_type == 'password') {
     var username = req.body.username
     var user = getUser(username)
@@ -626,22 +631,24 @@ app.post('/introspect', function (req, res) {
 
   var inToken = req.body.token
   console.log('Introspecting token %s', inToken)
-  nosql.one(
-    function (token) {
-      if (token.access_token == inToken) {
-        return token
+  nosql.one().make(function (builder) {
+    builder.where('access_token', inToken)
+    builder.callback(function (err, value) {
+      if (err) {
+        console.error('%s: %s', err.name, err.message)
+        res.status(500).end()
+        return
       }
-    },
-    function (err, token) {
-      if (token) {
+
+      if (value) {
         console.log('We found a matching token: %s', inToken)
 
         var introspectionResponse = {}
         introspectionResponse.active = true
         introspectionResponse.iss = 'http://localhost:9001/'
-        introspectionResponse.sub = token.user
-        introspectionResponse.scope = token.scope.join(' ')
-        introspectionResponse.client_id = token.client_id
+        introspectionResponse.sub = value.user
+        introspectionResponse.scope = value.scope.join(' ')
+        introspectionResponse.client_id = value.client_id
 
         res.status(200).json(introspectionResponse)
       } else {
@@ -651,8 +658,8 @@ app.post('/introspect', function (req, res) {
         introspectionResponse.active = false
         res.status(200).json(introspectionResponse)
       }
-    }
-  )
+    })
+  })
 })
 
 var checkClientMetadata = function (req, res) {
@@ -874,22 +881,24 @@ var getAccessToken = function (req, res, next) {
   }
 
   console.log('Incoming token: %s', inToken)
-  nosql.one(
-    function (token) {
-      if (token.access_token == inToken) {
-        return token
+  nosql.one().make(function (builder) {
+    builder.where('access_token', inToken)
+    builder.callback(function (err, value) {
+      if (err) {
+        console.error('%s: %s', err.name, err.message)
+        res.status(500).end()
+        return
       }
-    },
-    function (err, token) {
-      if (token) {
+
+      if (value) {
         console.log('We found a matching token: %s', inToken)
       } else {
         console.log('No matching token was found.')
       }
-      req.access_token = token
+      req.access_token = value
       next()
-    }
-  )
+    })
+  })
 }
 
 var requireAccessToken = function (req, res, next) {
