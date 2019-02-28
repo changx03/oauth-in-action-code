@@ -92,13 +92,10 @@ var requireAccessToken = function (req, res, next) {
 app.options('/helloworld', cors())
 app.get('/helloWorld', cors(), getAccessToken, requireAccessToken, function (req, res) {
   if (req.access_token) {
-    res.setHeader('X-Content-Type-Options', 'nosniff')
-    res.setHeader('X-XSS-Protection', '1; mode=block')
-
     var resource = {
       greeting: ''
     }
-
+    
     if (req.query.language == 'en') {
       resource.greeting = 'Hello World'
     } else if (req.query.language == 'de') {
@@ -113,6 +110,10 @@ app.get('/helloWorld', cors(), getAccessToken, requireAccessToken, function (req
       resource.greeting =
         'Error, invalid language: ' + querystring.escape(req.query.language)
     }
+
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('X-XSS-Protection', '1; mode=block')
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000')
     res.json(resource)
   }
 })
