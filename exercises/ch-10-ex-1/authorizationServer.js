@@ -183,6 +183,23 @@ app.post('/token', function (req, res) {
         /*
          * Add code to check PKCE values here
          */
+        if (code.request.code_challenge) {
+          let codeChallengeResult
+          const method = code.request.code_challenge_method
+          if (method === 'plain') {
+            codeChallengeResult = req.body.code_verifier
+          } else if (method === 'S256') {
+            codeChallengeResult = crypto.createHash('sha256').update(req.body.code_verifier).digest('base64')
+          } else {
+            res.status(400).json({ error: 'invalid_request' })
+            return
+          }
+          console.log('codeChallengeResult', codeChallengeResult)
+          if (codeChallengeResult !== code.request.code_challenge) {
+            res.status(400).json({ error: 'invalid_request' })
+            return
+          }
+        }
 
         var access_token = randomstring.generate()
         var refresh_token = randomstring.generate()

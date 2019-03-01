@@ -23,7 +23,6 @@ var authServer = {
 }
 
 // client information
-
 var client = {
   client_id: 'oauth-client-1',
   client_secret: 'oauth-client-secret-1',
@@ -32,13 +31,11 @@ var client = {
 
 var protectedResource = 'http://localhost:9002/resource'
 
-var state = null
-
-var access_token = null
-var scope = null
-var refresh_token = null
-
-var code_verifier = null
+var state
+var access_token
+var scope
+var refresh_token
+var code_verifier
 
 app.get('/', function (req, res) {
   res.render('index', {
@@ -53,11 +50,20 @@ app.get('/authorize', function (req, res) {
 
   state = randomstring.generate()
 
+  // PCKE code challenge
+  code_verifier = randomstring.generate(80) // any length between 43 and 128
+  // const code_challenge = base64url.fromBase64(crypto.createHash('sha256').update(code_verifier).digest('base64'))
+  // const code_challenge = Buffer.from(crypto.createHash('sha256').update(code_verifier).digest('base64')).toString('base64')
+  const code_challenge = crypto.createHash('sha256').update(code_verifier).digest('base64')
+  console.log('code_challenge', code_challenge)
+
   var authorizeUrl = buildUrl(authServer.authorizationEndpoint, {
     response_type: 'code',
     client_id: client.client_id,
     redirect_uri: client.redirect_uris[0],
-    state: state
+    state: state,
+    code_challenge,
+    code_challenge_method: 'S256'
   })
 
   console.log('redirect', authorizeUrl)
@@ -83,10 +89,12 @@ app.get('/callback', function (req, res) {
 
   var code = req.query.code
 
+  // PCKE: provides code_verifier (secret) to auth server for completing code challenge
   var form_data = qs.stringify({
     grant_type: 'authorization_code',
     code: code,
-    redirect_uri: client.redirect_uris[0]
+    redirect_uri: client.redirect_uris[0],
+    code_verifier
   })
   var headers = {
     'Content-Type': 'application/x-www-form-urlencoded',
