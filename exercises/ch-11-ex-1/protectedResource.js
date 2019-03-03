@@ -34,8 +34,7 @@ var sharedTokenSecret = 'shared token secret!'
 var rsaKey = {
   alg: 'RS256',
   e: 'AQAB',
-  n:
-    'p8eP5gL1H_H9UNzCuQS-vNRVz3NWxZTHYk1tG9VpkfFjWNKG3MFTNZJ1l5g_COMm2_2i_YhQNH8MJ_nQ4exKMXrWJB4tyVZohovUxfw-eLgu1XQ8oYcVYW8ym6Um-BkqwwWL6CXZ70X81YyIMrnsGTyTV6M8gBPun8g2L8KbDbXR1lDfOOWiZ2ss1CRLrmNM-GRp3Gj-ECG7_3Nx9n_s5to2ZtwJ1GS1maGjrSZ9GRAYLrHhndrL_8ie_9DS2T-ML7QNQtNkg2RvLv4f0dpjRYI23djxVtAylYK4oiT_uEMgSkc4dxwKwGuBxSO0g9JOobgfy0--FUHHYtRi0dOFZw',
+  n: 'p8eP5gL1H_H9UNzCuQS-vNRVz3NWxZTHYk1tG9VpkfFjWNKG3MFTNZJ1l5g_COMm2_2i_YhQNH8MJ_nQ4exKMXrWJB4tyVZohovUxfw-eLgu1XQ8oYcVYW8ym6Um-BkqwwWL6CXZ70X81YyIMrnsGTyTV6M8gBPun8g2L8KbDbXR1lDfOOWiZ2ss1CRLrmNM-GRp3Gj-ECG7_3Nx9n_s5to2ZtwJ1GS1maGjrSZ9GRAYLrHhndrL_8ie_9DS2T-ML7QNQtNkg2RvLv4f0dpjRYI23djxVtAylYK4oiT_uEMgSkc4dxwKwGuBxSO0g9JOobgfy0--FUHHYtRi0dOFZw',
   kty: 'RSA',
   kid: 'authserver'
 }
@@ -65,9 +64,19 @@ var getAccessToken = function (req, res, next) {
   console.log('Incoming token: %s', inToken)
 
   /*
-	 * Parse and validate the JWT here
-	 */
-
+   * Parse and validate the JWT here
+   */
+  const jwtParts = inToken.split('.')
+  const jwtPayload = JSON.parse(Buffer.from(jwtParts[1], 'base64'))
+  console.log(jwtPayload)
+  if (jwtPayload['iss'] === 'http://localhost:9001/') {
+    if ((Array.isArray(jwtPayload['aud']) && __.contains(jwtPayload['aud'], 'http://localhost:9002/')) || jwtPayload['aud'] === 'http://localhost:9002/') {
+      const now = Math.floor(Date.now() / 1000)
+      if (jwtPayload['iat'] <= now && jwtPayload['exp'] >= now) {
+        req.access_token = jwtPayload
+      }
+    }
+  }
   next()
 }
 
@@ -83,12 +92,8 @@ var savedWords = []
 
 app.options('/resource', cors())
 
-app.post('/resource', cors(), getAccessToken, function (req, res) {
-  if (req.access_token) {
+app.post('/resource', cors(), getAccessToken, requireAccessToken, function (req, res) {
     res.json(resource)
-  } else {
-    res.status(401).end()
-  }
 })
 
 var server = app.listen(9002, 'localhost', function () {

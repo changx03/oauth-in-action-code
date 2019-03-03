@@ -213,10 +213,24 @@ app.post('/token', function (req, res) {
       delete codes[req.body.code] // burn our code, it's been used
       if (code.request.client_id == clientId) {
         /*
-				 * Generate a JWT-formatted token instead of this random token
-				 */
-
-        var access_token = randomstring.generate()
+         * Generate a JWT-formatted token instead of this random token
+         */
+        // var access_token = randomstring.generate()
+        const jwtHeader = {
+          typ: 'JWT',
+          alg: 'none'
+        }
+        const jwtPayload = {
+          iss: 'http://localhost:9001/',
+          sub: code.user ? code.user.sub : undefined,
+          aud: 'http://localhost:9002/',
+          iat: Math.floor(Date.now() / 1000), // in milliseconds elapsed since 1/1/1970 00:00:00 UTC
+          exp: Math.floor(Date.now() / 1000) + 5 * 60,
+          jti: randomstring.generate(8)
+        }
+        const access_token =
+          Buffer.from(JSON.stringify(jwtHeader)).toString('base64').replace(/=+$/g, '') + '.' +
+          Buffer.from(JSON.stringify(jwtPayload)).toString('base64').replace(/=+$/g, '') + '.'
 
         nosql.insert({
           access_token: access_token,
@@ -248,7 +262,7 @@ app.post('/token', function (req, res) {
       res.status(400).json({ error: 'invalid_grant' })
     }
   } else if (req.body.grant_type == 'refresh_token') {
-		nosql.one().make(function (builder) {
+    nosql.one().make(function (builder) {
       builder.where('refresh_token', req.body['refresh_token'])
       builder.callback(function (err, value) {
         if (err) {
@@ -260,11 +274,14 @@ app.post('/token', function (req, res) {
         // not found
         if (!value) {
           res.status(400).json({ error: 'invalid_grant' })
-          return
         } else {
           // unknown client
           if (value['client_id'] !== clientId) {
-            console.log('Invalid client using a refresh token, expected %s got %s', value['client_id'], clientId)
+            console.log(
+              'Invalid client using a refresh token, expected %s got %s',
+              value['client_id'],
+              clientId
+            )
             // remove the compromised refresh_token
             nosql.remove().make(function (builder) {
               builder.where('refresh_token', req.body['refresh_token'])
@@ -274,15 +291,21 @@ app.post('/token', function (req, res) {
                   res.status(500).end()
                   return
                 }
-                console.log('remove %d with client_id: %s', count, value['client_id'])
+                console.log(
+                  'remove %d with client_id: %s',
+                  count,
+                  value['client_id']
+                )
                 res.status(400).json({ error: 'invalid_grant' })
-                return
               })
             })
           }
 
           // issue new access_token
-          console.log('We found a matching token: %s', req.body['refresh_token'])
+          console.log(
+            'We found a matching token: %s',
+            req.body['refresh_token']
+          )
           var access_token = randomstring.generate()
           var token_response = {
             access_token: access_token,
@@ -290,7 +313,11 @@ app.post('/token', function (req, res) {
             refresh_token: req.body.refresh_token
           }
           nosql.insert({ access_token: access_token, client_id: clientId })
-          console.log('Issuing access token %s for refresh token %s', access_token, req.body.refresh_token)
+          console.log(
+            'Issuing access token %s for refresh token %s',
+            access_token,
+            req.body.refresh_token
+          )
           res.status(200).json(token_response)
         }
       })
