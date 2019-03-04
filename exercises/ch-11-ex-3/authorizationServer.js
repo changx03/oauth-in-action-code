@@ -79,11 +79,9 @@ var getUser = function (username) {
 
 var rsaKey = {
   alg: 'RS256',
-  d:
-    'ZXFizvaQ0RzWRbMExStaS_-yVnjtSQ9YslYQF1kkuIoTwFuiEQ2OywBfuyXhTvVQxIiJqPNnUyZR6kXAhyj__wS_Px1EH8zv7BHVt1N5TjJGlubt1dhAFCZQmgz0D-PfmATdf6KLL4HIijGrE8iYOPYIPF_FL8ddaxx5rsziRRnkRMX_fIHxuSQVCe401hSS3QBZOgwVdWEb1JuODT7KUk7xPpMTw5RYCeUoCYTRQ_KO8_NQMURi3GLvbgQGQgk7fmDcug3MwutmWbpe58GoSCkmExUS0U-KEkHtFiC8L6fN2jXh1whPeRCa9eoIK8nsIY05gnLKxXTn5-aPQzSy6Q',
+  d: 'ZXFizvaQ0RzWRbMExStaS_-yVnjtSQ9YslYQF1kkuIoTwFuiEQ2OywBfuyXhTvVQxIiJqPNnUyZR6kXAhyj__wS_Px1EH8zv7BHVt1N5TjJGlubt1dhAFCZQmgz0D-PfmATdf6KLL4HIijGrE8iYOPYIPF_FL8ddaxx5rsziRRnkRMX_fIHxuSQVCe401hSS3QBZOgwVdWEb1JuODT7KUk7xPpMTw5RYCeUoCYTRQ_KO8_NQMURi3GLvbgQGQgk7fmDcug3MwutmWbpe58GoSCkmExUS0U-KEkHtFiC8L6fN2jXh1whPeRCa9eoIK8nsIY05gnLKxXTn5-aPQzSy6Q',
   e: 'AQAB',
-  n:
-    'p8eP5gL1H_H9UNzCuQS-vNRVz3NWxZTHYk1tG9VpkfFjWNKG3MFTNZJ1l5g_COMm2_2i_YhQNH8MJ_nQ4exKMXrWJB4tyVZohovUxfw-eLgu1XQ8oYcVYW8ym6Um-BkqwwWL6CXZ70X81YyIMrnsGTyTV6M8gBPun8g2L8KbDbXR1lDfOOWiZ2ss1CRLrmNM-GRp3Gj-ECG7_3Nx9n_s5to2ZtwJ1GS1maGjrSZ9GRAYLrHhndrL_8ie_9DS2T-ML7QNQtNkg2RvLv4f0dpjRYI23djxVtAylYK4oiT_uEMgSkc4dxwKwGuBxSO0g9JOobgfy0--FUHHYtRi0dOFZw',
+  n: 'p8eP5gL1H_H9UNzCuQS-vNRVz3NWxZTHYk1tG9VpkfFjWNKG3MFTNZJ1l5g_COMm2_2i_YhQNH8MJ_nQ4exKMXrWJB4tyVZohovUxfw-eLgu1XQ8oYcVYW8ym6Um-BkqwwWL6CXZ70X81YyIMrnsGTyTV6M8gBPun8g2L8KbDbXR1lDfOOWiZ2ss1CRLrmNM-GRp3Gj-ECG7_3Nx9n_s5to2ZtwJ1GS1maGjrSZ9GRAYLrHhndrL_8ie_9DS2T-ML7QNQtNkg2RvLv4f0dpjRYI23djxVtAylYK4oiT_uEMgSkc4dxwKwGuBxSO0g9JOobgfy0--FUHHYtRi0dOFZw',
   kty: 'RSA',
   kid: 'authserver'
 }
@@ -227,9 +225,8 @@ app.post('/token', function (req, res) {
         /*
          * Create a signed JWT using RS256 instead of this unsigned one
          */
-
-        var header = { typ: 'JWT', alg: 'none' }
-        var payload = {
+        const jwtHeader = { typ: 'JWT', alg: rsaKey.alg, kid: rsaKey.kid }
+        const jwtPayload = {
           iss: 'http://localhost:9001/',
           sub: code.user ? code.user.sub : undefined,
           aud: 'http://localhost:9002/',
@@ -237,28 +234,26 @@ app.post('/token', function (req, res) {
           exp: Math.floor(Date.now() / 1000) + 5 * 60,
           jti: randomstring.generate(8)
         }
-
-        var access_token =
-          base64url.encode(JSON.stringify(header)) +
-          '.' +
-          base64url.encode(JSON.stringify(payload)) +
-          '.'
-
+        const privateKey = jose.KEYUTIL.getKey(rsaKey)
+        const accessToken = jose.jws.JWS.sign(
+          null,
+          jwtHeader,
+          jwtPayload,
+          privateKey
+        )
         nosql.insert({
-          access_token: access_token,
+          access_token: accessToken,
           client_id: clientId,
           scope: code.scope,
           user: code.user
         })
-
-        console.log('Issuing access token %s', access_token)
+        console.log('Issuing access token %s', accessToken)
 
         var token_response = {
-          access_token: access_token,
+          access_token: accessToken,
           token_type: 'Bearer',
           scope: code.scope.join(' ')
         }
-
         res.status(200).json(token_response)
         console.log('Issued tokens for code %s', req.body.code)
       } else {

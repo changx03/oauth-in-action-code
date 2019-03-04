@@ -177,19 +177,14 @@ app.get('/fetch_resource', function (req, res) {
 app.use('/', express.static('files/client'))
 
 var buildUrl = function (base, options, hash) {
-  var newUrl = url.parse(base, true)
-  delete newUrl.search
-  if (!newUrl.query) {
-    newUrl.query = {}
-  }
-  __.each(options, function (value, key, list) {
-    newUrl.query[key] = value
+  const myUrl = new URL(base)
+  Object.keys(options).forEach(function (key) {
+    myUrl.searchParams.set(key, options[key])
   })
   if (hash) {
-    newUrl.hash = hash
+    myUrl.hash = hash
   }
-
-  return url.format(newUrl)
+  return myUrl.href
 }
 
 var encodeClientCredentials = function (clientId, clientSecret) {
