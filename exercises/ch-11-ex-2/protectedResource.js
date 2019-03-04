@@ -56,6 +56,11 @@ var getAccessToken = function (req, res, next) {
   /*
    * Validate the signature of the JWT
    */
+  if (!jose.jws.JWS.verify(inToken, sharedTokenSecret, [header.alg])) {
+    console.log('Invalid JWS token!')
+    res.status(401).end()
+    return
+  }
 
   if (payload.iss == 'http://localhost:9001/') {
     console.log('issuer OK')
@@ -80,7 +85,6 @@ var getAccessToken = function (req, res, next) {
       }
     }
   }
-
   next()
 }
 
@@ -96,12 +100,8 @@ var savedWords = []
 
 app.options('/resource', cors())
 
-app.post('/resource', cors(), getAccessToken, function (req, res) {
-  if (req.access_token) {
-    res.json(resource)
-  } else {
-    res.status(401).end()
-  }
+app.post('/resource', cors(), getAccessToken, requireAccessToken, function (req, res) {
+  res.json(resource)
 })
 
 var server = app.listen(9002, 'localhost', function () {

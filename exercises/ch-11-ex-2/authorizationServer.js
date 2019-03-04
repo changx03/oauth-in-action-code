@@ -90,7 +90,11 @@ app.get('/authorize', function (req, res) {
     console.log('Unknown client %s', req.query.client_id)
     res.render('error', { error: 'Unknown client' })
   } else if (!__.contains(client.redirect_uris, req.query.redirect_uri)) {
-    console.log('Mismatched redirect URI, expected %s got %s', client.redirect_uris, req.query.redirect_uri)
+    console.log(
+      'Mismatched redirect URI, expected %s got %s',
+      client.redirect_uris,
+      req.query.redirect_uri
+    )
     res.render('error', { error: 'Invalid redirect URI' })
   } else {
     var rscope = req.query.scope ? req.query.scope.split(' ') : undefined
@@ -214,9 +218,8 @@ app.post('/token', function (req, res) {
         /*
          * Sign the JWT using HS256 instead of this unsigned one
          */
-
-        var header = { typ: 'JWT', alg: 'none' }
-        var payload = {
+        var jswHeader = { typ: 'JWT', alg: 'HS256' }
+        var jwsPayload = {
           iss: 'http://localhost:9001/',
           sub: code.user ? code.user.sub : undefined,
           aud: 'http://localhost:9002/',
@@ -225,28 +228,31 @@ app.post('/token', function (req, res) {
           jti: randomstring.generate(8)
         }
 
-        var access_token =
-          base64url.encode(JSON.stringify(header)) +
-          '.' +
-          base64url.encode(JSON.stringify(payload)) +
-          '.'
-
+        // var access_token =
+        //   base64url.encode(JSON.stringify(header)) +
+        //   '.' +
+        //   base64url.encode(JSON.stringify(payload)) +
+        //   '.'
+        const accessToken = jose.jws.JWS.sign(
+          null, // defined in jsw header
+          JSON.stringify(jswHeader),
+          JSON.stringify(jwsPayload),
+          sharedTokenSecret
+        )
         nosql.insert({
-          access_token: access_token,
+          access_token: accessToken,
           client_id: clientId,
           scope: code.scope,
           user: code.user
         })
+        console.log('Issuing access token %s', accessToken)
 
-        console.log('Issuing access token %s', access_token)
-
-        var token_response = {
-          access_token: access_token,
+        const tokenResponse = {
+          access_token: accessToken,
           token_type: 'Bearer',
           scope: code.scope.join(' ')
         }
-
-        res.status(200).json(token_response)
+        res.status(200).json(tokenResponse)
         console.log('Issued tokens for code %s', req.body.code)
       } else {
         console.log(
@@ -276,12 +282,14 @@ app.post('/token', function (req, res) {
             },
             function (err) {
               res.status(400).json({ error: 'invalid_grant' })
-              return
             }
           )
         }
 
-        console.log('We found a matching refresh token: %s', req.body.refresh_token)
+        console.log(
+          'We found a matching refresh token: %s',
+          req.body.refresh_token
+        )
         const access_token = randomstring.generate()
         nosql.insert({ access_token: access_token, client_id: clientId })
         const token_response = {
