@@ -273,6 +273,43 @@ app.post('/revoke', function (req, res) {
   /*
    * Implement the token revocation endpoint
    */
+  const auth = req.headers['authorization']
+  let clientId
+  let clientSecret
+  if (auth) {
+    const clientCredentials = decodeClientCredentials(auth)
+    clientId = clientCredentials.id
+    clientSecret = clientCredentials.secret
+  }
+
+  if (req.body['client_id']) {
+    if (clientId) {
+      res.status(401).json({ error: 'invalid_client' })
+      return
+    }
+
+    clientId = req.body[client_id]
+    clientSecret = req.body[client_secret]
+  }
+
+  const client = getClient(clientId)
+  if (!client || client['client_secret'] !== clientSecret) {
+    res.status(401).json({ error: 'invalid_client' })
+      return
+  }
+
+  const inToken = req.body.token
+  nosql.remove().make(function (builder) {
+    builder.and()
+    builder.where('access_token', inToken)
+    builder.where('client_id', clientId) 
+    builder.end()
+    builder.callback(function (err, count) {
+      console.log('Removed %d tokens', count)
+      res.status(204).end()
+      return
+    })
+  })
 })
 
 var buildUrl = function (base, options, hash) {
