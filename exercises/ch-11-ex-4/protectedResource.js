@@ -51,7 +51,24 @@ var getAccessToken = function (req, res, next) {
   /*
    * Send the incoming token to the introspection endpoint and parse the results
    */
-
+  const formData = querystring.stringify({ token: inToken })
+  console.log('body:', formData)
+  const headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Authorization': 'Basic ' + encodeClientCredentials(protectedResources.resource_id, protectedResources.resource_secret)
+  }
+  const tokenRes = request('POST', authServer.introspectionEndpoint, {
+    body: formData,
+    headers: headers
+  })
+  if (tokenRes.statusCode >= 200 && tokenRes.statusCode < 300) {
+    const body = JSON.parse(tokenRes.getBody())
+    console.log('Got introspection response:', body)
+    const active = body.active
+    if (active) {
+      req.access_token = body
+    }
+  }
   next()
 }
 
@@ -65,12 +82,11 @@ var requireAccessToken = function (req, res, next) {
 
 app.options('/resource', cors())
 
-app.post('/resource', cors(), getAccessToken, function (req, res) {
-  if (req.access_token) {
-    res.json(resource)
-  } else {
-    res.status(401).end()
-  }
+app.post('/resource', cors(), getAccessToken, requireAccessToken, function (
+  req,
+  res
+) {
+  res.json(resource)
 })
 
 var encodeClientCredentials = function (clientId, clientSecret) {

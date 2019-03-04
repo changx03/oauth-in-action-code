@@ -90,6 +90,39 @@ var getUser = function (username) {
   return userInfo[username]
 }
 
+var buildUrl = function (base, options, hash) {
+  var newUrl = url.parse(base, true)
+  delete newUrl.search
+  if (!newUrl.query) {
+    newUrl.query = {}
+  }
+  __.each(options, function (value, key, list) {
+    newUrl.query[key] = value
+  })
+  if (hash) {
+    newUrl.hash = hash
+  }
+
+  return url.format(newUrl)
+}
+
+var decodeClientCredentials = function (auth) {
+  var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64')
+    .toString()
+    .split(':')
+  var clientId = querystring.unescape(clientCredentials[0])
+  var clientSecret = querystring.unescape(clientCredentials[1])
+  return { id: clientId, secret: clientSecret }
+}
+
+var getScopesFromForm = function (body) {
+  return __.filter(__.keys(body), function (s) {
+    return __.string.startsWith(s, 'scope_')
+  }).map(function (s) {
+    return s.slice('scope_'.length)
+  })
+}
+
 app.get('/', function (req, res) {
   res.render('index', { clients: clients, authServer: authServer })
 })
@@ -270,40 +303,47 @@ app.post('/introspect', function (req, res) {
   /*
    * Implement the introspection endpoint
    */
+  const auth = req.headers['authorization']
+  const resourceCredentials = decodeClientCredentials(auth)
+  const resourceId = resourceCredentials.id
+  const resourceSecret =resourceCredentials.secret
+  const resource = getProtectedResource(resourceId)
+  if (!resource) {
+    res.status(401).end()
+    return
+  }
+  if (resource.resource_secret !== resourceSecret) {
+    res.status(401).end()
+    return
+  }
+
+  const inToken = req.body.token
+  nosql.one().make(function (builder) {
+    builder.where('access_token', inToken)
+    builder.callback(function (err, value) {
+      if (err) {
+        res.status(500).end()
+        return
+      }
+      if (!value) {
+        console.log('Token not found')
+        res.status(200).json({ active: false })
+        return
+      }
+
+      const introspectResponse = {
+        active: true,
+        iss: 'http://localhost:9001/',
+        aud: 'http://localhost:9002/',
+        sub: value.user ? value.user.sub : undefined,
+        username: value.user ? value.user.preferred_username : undefined,
+        scope: value.scope ? value.scope.join(' ') : undefined,
+        client_id: value.client_id
+      }
+      res.status(200).json(introspectResponse)
+    })
+  })
 })
-
-var buildUrl = function (base, options, hash) {
-  var newUrl = url.parse(base, true)
-  delete newUrl.search
-  if (!newUrl.query) {
-    newUrl.query = {}
-  }
-  __.each(options, function (value, key, list) {
-    newUrl.query[key] = value
-  })
-  if (hash) {
-    newUrl.hash = hash
-  }
-
-  return url.format(newUrl)
-}
-
-var decodeClientCredentials = function (auth) {
-  var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64')
-    .toString()
-    .split(':')
-  var clientId = querystring.unescape(clientCredentials[0])
-  var clientSecret = querystring.unescape(clientCredentials[1])
-  return { id: clientId, secret: clientSecret }
-}
-
-var getScopesFromForm = function (body) {
-  return __.filter(__.keys(body), function (s) {
-    return __.string.startsWith(s, 'scope_')
-  }).map(function (s) {
-    return s.slice('scope_'.length)
-  })
-}
 
 app.use('/', express.static('files/authorizationServer'))
 
