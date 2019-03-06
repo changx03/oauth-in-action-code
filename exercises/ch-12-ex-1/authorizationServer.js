@@ -228,6 +228,17 @@ app.post('/register', function (req, res) {
   /*
    * Implement the registration endpoint
    */
+  const reg = {}
+  if (!req.body['token_endpoint_auth_method']) {
+    reg['token_endpoint_auth_method'] = 'secret_basic'
+  } else {
+    reg['token_endpoint_auth_method'] = req.body['token_endpoint_auth_method']
+  }
+
+  if (!__.contains(['secret_basic', 'secret_post', 'none'], reg['token_endpoint_auth_method'])) {
+    res.status(400).json({ error: 'invalid_client_metadata' })
+    return
+  }
 })
 
 var buildUrl = function (base, options, hash) {
