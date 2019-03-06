@@ -66,7 +66,7 @@ var getAccessToken = function (req, res, next) {
   nosql.one().make(function (builder) {
     builder.where('access_token', inToken) 
     builder.callback(function (err, value) {
-      if (!value) {
+      if (value) {
         console.log('We found a matching token: %s', inToken)
         req['access_token'] = value
       } else {

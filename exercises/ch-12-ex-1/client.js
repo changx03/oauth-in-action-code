@@ -54,6 +54,13 @@ app.get('/authorize', function (req, res) {
   /*
    * If the client hasn't been registered yet, call the registerClient function
    */
+  if (!client['client_id']) {
+    registerClient()
+    if (!client['client_id']) {
+      res.render('error', { error: 'Unable to register client.'})
+      return
+    }
+  }
 
   access_token = null
   refresh_token = null
@@ -97,8 +104,7 @@ app.get('/callback', function (req, res) {
   })
   var headers = {
     'Content-Type': 'application/x-www-form-urlencoded',
-    Authorization:
-      'Basic ' + encodeClientCredentials(client.client_id, client.client_secret)
+    Authorization: 'Basic ' + encodeClientCredentials(client.client_id, client.client_secret)
   }
 
   var tokRes = request('POST', authServer.tokenEndpoint, {
@@ -170,6 +176,28 @@ var registerClient = function () {
   /*
    * Call the registration endpoint with your desired client information and save the results
    */
+  const body = {
+    client_name: 'OAuth Dynamic Test Client',
+    client_uri: 'http://localhost:9000/',
+    redirect_uris: ['http://localhost:9000/callback'],
+    grant_types: ['authorization_code'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'secret_basic',
+    scope: 'foo bar'
+  }
+  const headers = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  }
+  const registrationResponse = request('POST', authServer.registrationEndpoint, {
+    headers,
+    body: JSON.stringify(body)
+  })
+  if (registrationResponse.statusCode === 201) {
+    const body = JSON.parse(registrationResponse.getBody())
+    console.log(body)
+    client = body
+  }
 }
 
 app.use('/', express.static('files/client'))

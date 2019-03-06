@@ -235,10 +235,43 @@ app.post('/register', function (req, res) {
     reg['token_endpoint_auth_method'] = req.body['token_endpoint_auth_method']
   }
 
-  if (!__.contains(['secret_basic', 'secret_post', 'none'], reg['token_endpoint_auth_method'])) {
+  // if either grant_types = authorization_code or response_types = code presents, we fill another field
+  reg['grant_types'] = req.body['grant_types']
+  reg['response_types'] = req.body['response_types']
+  if (__.contains(reg['grant_types'], 'authorization_code') && !reg['response_types']) {
+    reg['response_types'] = ['code']
+  }
+  if (__.contains(reg['response_types'], 'code') && !reg['grant_types']) {
+    reg['grant_types'] = ['authorization_code']
+  }
+
+  reg['redirect_uris'] = req.body['redirect_uris']
+  reg['client_name'] = req.body['client_name']
+  reg['client_uri'] = req.body['client_uri']
+  reg['logo_uri'] = req.body['logo_uri']
+  reg.scope = req.body.scope
+
+  if (!__.contains(['secret_basic', 'secret_post', 'none'], reg['token_endpoint_auth_method'])
+    || !(__.contains(reg['response_types'], 'code') && __.contains(reg['grant_types'], 'authorization_code'))
+    || !(Array.isArray(req.body['redirect_uris']) && req.body['redirect_uris'].length > 0)
+    || !reg['redirect_uris']
+    || !reg['client_name']
+    || !reg['client_uri']
+  ) {
     res.status(400).json({ error: 'invalid_client_metadata' })
     return
   }
+  
+  reg['client_id'] = randomstring.generate()
+  if (__.contains(['secret_basic', 'secret_post'], reg['token_endpoint_auth_method'])) {
+    reg['client_secret'] = randomstring.generate()
+  }
+  reg['client_id_created_at'] = Math.floor(Date.now() / 1000)
+  reg['client_secret_expires_at'] = 0
+
+  console.log(reg)
+  clients.push(reg)
+  res.status(201).json(reg)
 })
 
 var buildUrl = function (base, options, hash) {
