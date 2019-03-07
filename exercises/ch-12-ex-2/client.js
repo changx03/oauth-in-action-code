@@ -274,6 +274,20 @@ app.get('/unregister_client', function (req, res) {
   /*
    * Delete the client's registration from the server
    */
+  const headers = {
+    'Authorization': 'Bearer ' + client.registration_access_token
+  }
+  const response = request('DELETE', client.registration_client_uri, { headers })
+  if (response.statusCode === 204) {
+    res.render('index', {
+      access_token,
+      refresh_token,
+      scope,
+      client
+    })
+  } else {
+    res.render('error', { error: 'Unable to delete client ' + response.statusCode })
+  }
 })
 
 app.use('/', express.static('files/client'))
