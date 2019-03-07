@@ -41,6 +41,58 @@ var scope = null
 var id_token = null
 var userInfo = null
 
+var registerClient = function () {
+  var template = {
+    client_name: 'OAuth in Action Dynamic Test Client',
+    client_uri: 'http://localhost:9000/',
+    redirect_uris: ['http://localhost:9000/callback'],
+    grant_types: ['authorization_code'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'secret_basic',
+    scope: 'foo bar'
+  }
+
+  var headers = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json'
+  }
+
+  var regRes = request('POST', authServer.registrationEndpoint, {
+    body: JSON.stringify(template),
+    headers: headers
+  })
+
+  if (regRes.statusCode == 201) {
+    var body = JSON.parse(regRes.getBody())
+    console.log('Got registered client', body)
+    if (body.client_id) {
+      client = body
+    }
+  }
+}
+
+var buildUrl = function (base, options, hash) {
+  var newUrl = url.parse(base, true)
+  delete newUrl.search
+  if (!newUrl.query) {
+    newUrl.query = {}
+  }
+  __.each(options, function (value, key, list) {
+    newUrl.query[key] = value
+  })
+  if (hash) {
+    newUrl.hash = hash
+  }
+
+  return url.format(newUrl)
+}
+
+var encodeClientCredentials = function (clientId, clientSecret) {
+  return Buffer.from(
+    querystring.escape(clientId) + ':' + querystring.escape(clientSecret)
+  ).toString('base64')
+}
+
 app.get('/', function (req, res) {
   res.render('index', {
     access_token: access_token,
@@ -170,36 +222,6 @@ app.get('/fetch_resource', function (req, res) {
   }
 })
 
-var registerClient = function () {
-  var template = {
-    client_name: 'OAuth in Action Dynamic Test Client',
-    client_uri: 'http://localhost:9000/',
-    redirect_uris: ['http://localhost:9000/callback'],
-    grant_types: ['authorization_code'],
-    response_types: ['code'],
-    token_endpoint_auth_method: 'secret_basic',
-    scope: 'foo bar'
-  }
-
-  var headers = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json'
-  }
-
-  var regRes = request('POST', authServer.registrationEndpoint, {
-    body: JSON.stringify(template),
-    headers: headers
-  })
-
-  if (regRes.statusCode == 201) {
-    var body = JSON.parse(regRes.getBody())
-    console.log('Got registered client', body)
-    if (body.client_id) {
-      client = body
-    }
-  }
-}
-
 app.get('/read_client', function (req, res) {
   /*
    * Read the client's registration information from the management endpoint
@@ -220,6 +242,32 @@ app.post('/update_client', function (req, res) {
   /*
    * Update the client's registration with input from the form
    */
+  const headers = {
+    'Accept': 'application/json',
+    'Authorization': 'Bearer ' + client.registration_access_token,
+    'Content-Type': 'application/json'
+  }
+  const reg = __.clone(client)
+  delete reg['client_id_issued_at']
+  delete reg['client_secret_expires_at']
+  delete reg['registration_client_uri']
+  delete reg['registration_access_token']
+  reg['client_name'] = req.body['client_name']
+  const response = request('PUT', client.registration_client_uri, {
+    headers,
+    body: JSON.stringify(reg)
+  })
+  if (response.statusCode === 200) {
+    client = Object.assign(client, JSON.parse(response.getBody()))
+    res.render('index', {
+      access_token,
+      refresh_token,
+      scope,
+      client
+    })
+  } else {
+    res.render('error', { error: 'Unable to update client ' + response.statusCode })
+  }
 })
 
 app.get('/unregister_client', function (req, res) {
@@ -229,28 +277,6 @@ app.get('/unregister_client', function (req, res) {
 })
 
 app.use('/', express.static('files/client'))
-
-var buildUrl = function (base, options, hash) {
-  var newUrl = url.parse(base, true)
-  delete newUrl.search
-  if (!newUrl.query) {
-    newUrl.query = {}
-  }
-  __.each(options, function (value, key, list) {
-    newUrl.query[key] = value
-  })
-  if (hash) {
-    newUrl.hash = hash
-  }
-
-  return url.format(newUrl)
-}
-
-var encodeClientCredentials = function (clientId, clientSecret) {
-  return Buffer.from(
-    querystring.escape(clientId) + ':' + querystring.escape(clientSecret)
-  ).toString('base64')
-}
 
 var server = app.listen(9000, 'localhost', function () {
   var host = server.address().address
