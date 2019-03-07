@@ -204,6 +204,16 @@ app.get('/read_client', function (req, res) {
   /*
    * Read the client's registration information from the management endpoint
    */
+  const headers = {
+    'Accept': 'application/json',
+    'Authorization': 'Bearer ' + client.registration_access_token
+  }
+  const response = request('GET', client.registration_client_uri, { headers })
+  if (response.statusCode === 200) {
+    res.render('data', { resource: JSON.parse(response.getBody()) })
+  } else {
+    res.render('error', { error: 'Unable to fetch client ' + response.statusCode })
+  }
 })
 
 app.post('/update_client', function (req, res) {
