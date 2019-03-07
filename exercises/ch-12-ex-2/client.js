@@ -222,20 +222,50 @@ app.get('/callback', function (req, res) {
   }
 })
 
+app.get('/fetch_resource', function (req, res) {
+  if (!access_token) {
+    res.render('error', { error: 'Missing access token.' })
+    return
+  }
+
+  console.log('Making request with access token %s', access_token)
+
+  var headers = {
+    Authorization: 'Bearer ' + access_token,
+    'Content-Type': 'application/x-www-form-urlencoded'
+  }
+
+  var resource = request('POST', protectedResource, { headers: headers })
+
+  if (resource.statusCode >= 200 && resource.statusCode < 300) {
+    var body = JSON.parse(resource.getBody())
+    res.render('data', { resource: body })
+  } else {
+    access_token = null
+    if (refresh_token) {
+      // try to refresh and start again
+      refreshAccessToken(req, res)
+    } else {
+      res.render('error', {
+        error: 'Server returned response code: ' + resource.statusCode
+      })
+    }
+  }
+})
+
 app.get('/read_client', function (req, res) {
   /*
    * Read the client's registration information from the management endpoint
    */
   const headers = {
-    Accept: 'application/json',
-    Authorization: 'Bearer ' + client.registration_access_token
+    'Accept': 'application/json',
+    'Authorization': 'Bearer ' + client.registration_access_token
   }
-  const response = request('GET', client['registration_client_uri'], { headers })
+  const response = request('GET', client.registration_client_uri, { headers })
   if (response.statusCode === 200) {
-    client = JSON.parse(response.getBody())
-    res.render('data', { resource: client })
+    res.render('data', { resource: JSON.parse(response.getBody()) })
   } else {
-    res.render('error', { error: 'Unable to read client ' + response.statusCode })
+    res.render('error', { error: 'Unable to fetch client ' + response.statusCode })
   }
 })
 
@@ -244,27 +274,30 @@ app.post('/update_client', function (req, res) {
    * Update the client's registration with input from the form
    */
   const headers = {
-    'Content-Type': 'application/json',
     'Accept': 'application/json',
-    'Authorization': 'Bearer ' + client.registration_access_token
+    'Authorization': 'Bearer ' + client.registration_access_token,
+    'Content-Type': 'application/json'
   }
-
-  const clientCopy = __.clone(client)
-  delete clientCopy['client_id_issued_at']
-  delete clientCopy['client_secret_expires_at']
-  delete clientCopy['registration_client_uri']
-  // delete clientCopy['registration_access_token']
-  clientCopy.client_name = req.body.client_name
-  const updateResponse = request('PUT', client.registration_client_uri, {
+  const reg = __.clone(client)
+  delete reg['client_id_issued_at']
+  delete reg['client_secret_expires_at']
+  delete reg['registration_client_uri']
+  delete reg['registration_access_token']
+  reg['client_name'] = req.body['client_name']
+  const response = request('PUT', client.registration_client_uri, {
     headers,
-    body: JSON.stringify(clientCopy)
+    body: JSON.stringify(reg)
   })
-  if (updateResponse.statusCode === 200) {
-    client = JSON.parse(updateResponse.getBody())
-    console.log(client)
-    res.render('index', { access_token, refresh_token, scope, client })
+  if (response.statusCode === 200) {
+    client = Object.assign(client, JSON.parse(response.getBody()))
+    res.render('index', {
+      access_token,
+      refresh_token,
+      scope,
+      client
+    })
   } else {
-    res.render('error', { error: 'Unable to update client ' + updateResponse.statusCode })
+    res.render('error', { error: 'Unable to update client ' + response.statusCode })
   }
 })
 
@@ -272,6 +305,20 @@ app.get('/unregister_client', function (req, res) {
   /*
    * Delete the client's registration from the server
    */
+  const headers = {
+    'Authorization': 'Bearer ' + client.registration_access_token
+  }
+  const response = request('DELETE', client.registration_client_uri, { headers })
+  if (response.statusCode === 204) {
+    res.render('index', {
+      access_token,
+      refresh_token,
+      scope,
+      client
+    })
+  } else {
+    res.render('error', { error: 'Unable to delete client ' + response.statusCode })
+  }
 })
 
 app.use('/', express.static('files/client'))

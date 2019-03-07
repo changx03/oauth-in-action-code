@@ -44,6 +44,84 @@ var getClient = function (clientId) {
   })
 }
 
+function checkClientMetadata (req, res) {
+  const reg = {}
+  if (!req.body['token_endpoint_auth_method']) {
+    reg['token_endpoint_auth_method'] = 'secret_basic'
+  } else {
+    reg['token_endpoint_auth_method'] = req.body['token_endpoint_auth_method']
+  }
+
+  // if either grant_types = authorization_code or response_types = code presents, we fill another field
+  reg['grant_types'] = req.body['grant_types']
+  reg['response_types'] = req.body['response_types']
+  if (__.contains(reg['grant_types'], 'authorization_code') && !reg['response_types']) {
+    reg['response_types'] = ['code']
+  }
+  if (__.contains(reg['response_types'], 'code') && !reg['grant_types']) {
+    reg['grant_types'] = ['authorization_code']
+  }
+
+  reg['redirect_uris'] = req.body['redirect_uris']
+  reg['client_name'] = req.body['client_name']
+  reg['client_uri'] = req.body['client_uri']
+  reg['logo_uri'] = req.body['logo_uri']
+  reg.scope = req.body.scope
+
+  if (!__.contains(['secret_basic', 'secret_post', 'none'], reg['token_endpoint_auth_method'])
+    || !(__.contains(reg['response_types'], 'code') && __.contains(reg['grant_types'], 'authorization_code'))
+    || !(Array.isArray(req.body['redirect_uris']) && req.body['redirect_uris'].length > 0)
+    || !reg['redirect_uris']
+    || !reg['client_name']
+    || !reg['client_uri']
+  ) {
+    res.status(400).json({ error: 'invalid_client_metadata' })
+    return
+  }
+
+  reg['client_id'] = randomstring.generate()
+  if (__.contains(['secret_basic', 'secret_post'], reg['token_endpoint_auth_method'])) {
+    reg['client_secret'] = randomstring.generate()
+  }
+  reg['client_id_created_at'] = Math.floor(Date.now() / 1000)
+  reg['client_secret_expires_at'] = 0
+  console.log(reg)
+  return reg
+}
+
+var buildUrl = function (base, options, hash) {
+  var newUrl = url.parse(base, true)
+  delete newUrl.search
+  if (!newUrl.query) {
+    newUrl.query = {}
+  }
+  __.each(options, function (value, key, list) {
+    newUrl.query[key] = value
+  })
+  if (hash) {
+    newUrl.hash = hash
+  }
+
+  return url.format(newUrl)
+}
+
+var decodeClientCredentials = function (auth) {
+  var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64')
+    .toString()
+    .split(':')
+  var clientId = querystring.unescape(clientCredentials[0])
+  var clientSecret = querystring.unescape(clientCredentials[1])
+  return { id: clientId, secret: clientSecret }
+}
+
+var getScopesFromForm = function (body) {
+  return __.filter(__.keys(body), function (s) {
+    return __.string.startsWith(s, 'scope_')
+  }).map(function (s) {
+    return s.slice('scope_'.length)
+  })
+}
+
 app.get('/', function (req, res) {
   res.render('index', { clients: clients, authServer: authServer })
 })
@@ -253,108 +331,6 @@ app.post('/token', function (req, res) {
   }
 })
 
-function checkClientMetadata (req, res) {
-  var reg = {}
-
-  if (!req.body.token_endpoint_auth_method) {
-    reg.token_endpoint_auth_method = 'secret_basic'
-  } else {
-    reg.token_endpoint_auth_method = req.body.token_endpoint_auth_method
-  }
-
-  if (
-    !__.contains(
-      ['secret_basic', 'secret_post', 'none'],
-      reg.token_endpoint_auth_method
-    )
-  ) {
-    res.status(400).json({ error: 'invalid_client_metadata' })
-    return
-  }
-
-  if (!req.body.grant_types) {
-    if (!req.body.response_types) {
-      reg.grant_types = ['authorization_code']
-      reg.response_types = ['code']
-    } else {
-      reg.response_types = req.body.response_types
-      if (__.contains(req.body.response_types, 'code')) {
-        reg.grant_types = ['authorization_code']
-      } else {
-        reg.grant_types = []
-      }
-    }
-  } else {
-    if (!req.body.response_types) {
-      reg.grant_types = req.body.grant_types
-      if (__.contains(req.body.grant_types, 'authorization_code')) {
-        reg.response_types = ['code']
-      } else {
-        reg.response_types = []
-      }
-    } else {
-      reg.grant_types = req.body.grant_types
-      reg.reponse_types = req.body.response_types
-      if (
-        __.contains(req.body.grant_types, 'authorization_code') &&
-        !__.contains(req.body.response_types, 'code')
-      ) {
-        reg.response_types.push('code')
-      }
-      if (
-        !__.contains(req.body.grant_types, 'authorization_code') &&
-        __.contains(req.body.response_types, 'code')
-      ) {
-        reg.grant_types.push('authorization_code')
-      }
-    }
-  }
-
-  if (
-    !__.isEmpty(
-      __.without(reg.grant_types, 'authorization_code', 'refresh_token')
-    ) ||
-    !__.isEmpty(__.without(reg.response_types, 'code'))
-  ) {
-    res.status(400).json({ error: 'invalid_client_metadata' })
-    return
-  }
-
-  if (
-    !req.body.redirect_uris ||
-    !__.isArray(req.body.redirect_uris) ||
-    __.isEmpty(req.body.redirect_uris)
-  ) {
-    res.status(400).json({ error: 'invalid_redirect_uri' })
-    return
-  } else {
-    reg.redirect_uris = req.body.redirect_uris
-  }
-
-  if (typeof req.body.client_name === 'string') {
-    reg.client_name = req.body.client_name
-  }
-
-  if (typeof req.body.client_uri === 'string') {
-    reg.client_uri = req.body.client_uri
-  }
-
-  if (typeof req.body.logo_uri === 'string') {
-    reg.logo_uri = req.body.logo_uri
-  }
-
-  if (typeof req.body.scope === 'string') {
-    reg.scope = req.body.scope
-  }
-
-  reg.client_id = randomstring.generate()
-  if (__.contains(['secret_basic', 'secret_post'], reg.token_endpoint_auth_method)) {
-    reg.client_secret = randomstring.generate()
-  }
-
-  return reg
-}
-
 app.post('/register', function (req, res) {
   var reg = checkClientMetadata(req, res)
   if (!reg) {
@@ -364,14 +340,14 @@ app.post('/register', function (req, res) {
   reg['client_id_created_at'] = Math.floor(Date.now() / 1000)
   reg['client_secret_expires_at'] = 0
 
-  reg['registration_access_token'] = randomstring.generate()
-  reg['registration_client_uri'] = 'http://localhost:9001/register/' + reg.client_id
+  reg.registration_access_token = randomstring.generate()
+  reg.registration_client_uri = 'http://localhost:9001/register/' + reg.client_id
 
   clients.push(reg)
   res.status(201).json(reg)
 })
 
-var authorizeConfigEndpointRequest = function (req, res, next) {
+var authConfigEndpointRequest = function (req, res, next) {
   var clientId = req.params.clientId
   var client = getClient(clientId)
   if (!client) {
@@ -394,28 +370,18 @@ var authorizeConfigEndpointRequest = function (req, res, next) {
   }
 }
 
-app.get('/register/:clientId', authorizeConfigEndpointRequest, function (
-  req,
-  res
-) {
-  const client = getClient(req.params.clientId)
-  res.status(200).json(client)
+app.get('/register/:clientId', authConfigEndpointRequest, function (req, res) {
+  res.status(200).json(req.client)
 })
 
-app.put('/register/:clientId', authorizeConfigEndpointRequest, function (
-  req,
-  res
-) {
-  const client = getClient(req.params.clientId)
+app.put('/register/:clientId', authConfigEndpointRequest, function (req, res) {
+  const client = req.client
   if (req.body.client_id != client.client_id) {
     res.status(400).json({ error: 'invalid_client_metadata' })
     return
   }
 
-  if (
-    req.body.client_secret &&
-    req.body.client_secret != client.client_secret
-  ) {
+  if (req.body.client_secret && req.body.client_secret != client.client_secret) {
     res.status(400).json({ error: 'invalid_client_metadata' })
   }
 
@@ -434,59 +400,18 @@ app.put('/register/:clientId', authorizeConfigEndpointRequest, function (
   res.status(200).json(client)
 })
 
-app.delete(
-  '/register/:clientId',
-  authorizeConfigEndpointRequest,
-  function (req, res) {
-    clients = __.reject(clients, __.matches({ client_id: client.client_id }))
+app.delete('/register/:clientId', authConfigEndpointRequest, function (req, res) {
+  const client = req.client
+  clients = __.reject(clients, __.matches({ client_id: client.client_id }))
 
-    nosql.remove(
-      function (token) {
-        if (token.client_id == clientId) {
-          return true
-        }
-      },
-      function (err, count) {
-        console.log('Removed %s clients', count)
-      }
-    )
-
-    res.status(204).end()
-  }
-)
-
-var buildUrl = function (base, options, hash) {
-  var newUrl = url.parse(base, true)
-  delete newUrl.search
-  if (!newUrl.query) {
-    newUrl.query = {}
-  }
-  __.each(options, function (value, key, list) {
-    newUrl.query[key] = value
+  nosql.remove().make(function (builder) {
+    builder.where('client_id', req.params.clientId)
+    builder.callback(function (err, count) {
+      console.log('Removed %s clients', count)
+      res.status(204).end()
+    })
   })
-  if (hash) {
-    newUrl.hash = hash
-  }
-
-  return url.format(newUrl)
-}
-
-var decodeClientCredentials = function (auth) {
-  var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64')
-    .toString()
-    .split(':')
-  var clientId = querystring.unescape(clientCredentials[0])
-  var clientSecret = querystring.unescape(clientCredentials[1])
-  return { id: clientId, secret: clientSecret }
-}
-
-var getScopesFromForm = function (body) {
-  return __.filter(__.keys(body), function (s) {
-    return __.string.startsWith(s, 'scope_')
-  }).map(function (s) {
-    return s.slice('scope_'.length)
-  })
-}
+})
 
 app.use('/', express.static('files/authorizationServer'))
 
