@@ -41,6 +41,58 @@ var scope = null
 var id_token = null
 var userInfo = null
 
+var registerClient = function () {
+  var template = {
+    client_name: 'OAuth in Action Dynamic Test Client',
+    client_uri: 'http://localhost:9000/',
+    redirect_uris: ['http://localhost:9000/callback'],
+    grant_types: ['authorization_code'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'secret_basic',
+    scope: 'foo bar'
+  }
+
+  var headers = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json'
+  }
+
+  var regRes = request('POST', authServer.registrationEndpoint, {
+    body: JSON.stringify(template),
+    headers: headers
+  })
+
+  if (regRes.statusCode == 201) {
+    var body = JSON.parse(regRes.getBody())
+    console.log('Got registered client', body)
+    if (body.client_id) {
+      client = body
+    }
+  }
+}
+
+var buildUrl = function (base, options, hash) {
+  var newUrl = url.parse(base, true)
+  delete newUrl.search
+  if (!newUrl.query) {
+    newUrl.query = {}
+  }
+  __.each(options, function (value, key, list) {
+    newUrl.query[key] = value
+  })
+  if (hash) {
+    newUrl.hash = hash
+  }
+
+  return url.format(newUrl)
+}
+
+var encodeClientCredentials = function (clientId, clientSecret) {
+  return Buffer.from(
+    querystring.escape(clientId) + ':' + querystring.escape(clientSecret)
+  ).toString('base64')
+}
+
 app.get('/', function (req, res) {
   res.render('index', {
     access_token: access_token,
@@ -74,6 +126,37 @@ app.get('/authorize', function (req, res) {
 
   console.log('redirect', authorizeUrl)
   res.redirect(authorizeUrl)
+})
+
+app.get('/fetch_resource', function (req, res) {
+  if (!access_token) {
+    res.render('error', { error: 'Missing access token.' })
+    return
+  }
+
+  console.log('Making request with access token %s', access_token)
+
+  var headers = {
+    Authorization: 'Bearer ' + access_token,
+    'Content-Type': 'application/x-www-form-urlencoded'
+  }
+
+  var resource = request('POST', protectedResource, { headers: headers })
+
+  if (resource.statusCode >= 200 && resource.statusCode < 300) {
+    var body = JSON.parse(resource.getBody())
+    res.render('data', { resource: body })
+  } else {
+    access_token = null
+    if (refresh_token) {
+      // try to refresh and start again
+      refreshAccessToken(req, res)
+    } else {
+      res.render('error', {
+        error: 'Server returned response code: ' + resource.statusCode
+      })
+    }
+  }
 })
 
 app.get('/callback', function (req, res) {
@@ -139,77 +222,50 @@ app.get('/callback', function (req, res) {
   }
 })
 
-app.get('/fetch_resource', function (req, res) {
-  if (!access_token) {
-    res.render('error', { error: 'Missing access token.' })
-    return
-  }
-
-  console.log('Making request with access token %s', access_token)
-
-  var headers = {
-    Authorization: 'Bearer ' + access_token,
-    'Content-Type': 'application/x-www-form-urlencoded'
-  }
-
-  var resource = request('POST', protectedResource, { headers: headers })
-
-  if (resource.statusCode >= 200 && resource.statusCode < 300) {
-    var body = JSON.parse(resource.getBody())
-    res.render('data', { resource: body })
-  } else {
-    access_token = null
-    if (refresh_token) {
-      // try to refresh and start again
-      refreshAccessToken(req, res)
-    } else {
-      res.render('error', {
-        error: 'Server returned response code: ' + resource.statusCode
-      })
-    }
-  }
-})
-
-var registerClient = function () {
-  var template = {
-    client_name: 'OAuth in Action Dynamic Test Client',
-    client_uri: 'http://localhost:9000/',
-    redirect_uris: ['http://localhost:9000/callback'],
-    grant_types: ['authorization_code'],
-    response_types: ['code'],
-    token_endpoint_auth_method: 'secret_basic',
-    scope: 'foo bar'
-  }
-
-  var headers = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json'
-  }
-
-  var regRes = request('POST', authServer.registrationEndpoint, {
-    body: JSON.stringify(template),
-    headers: headers
-  })
-
-  if (regRes.statusCode == 201) {
-    var body = JSON.parse(regRes.getBody())
-    console.log('Got registered client', body)
-    if (body.client_id) {
-      client = body
-    }
-  }
-}
-
 app.get('/read_client', function (req, res) {
   /*
    * Read the client's registration information from the management endpoint
    */
+  const headers = {
+    Accept: 'application/json',
+    Authorization: 'Bearer ' + client.registration_access_token
+  }
+  const response = request('GET', client['registration_client_uri'], { headers })
+  if (response.statusCode === 200) {
+    client = JSON.parse(response.getBody())
+    res.render('data', { resource: client })
+  } else {
+    res.render('error', { error: 'Unable to read client ' + response.statusCode })
+  }
 })
 
 app.post('/update_client', function (req, res) {
   /*
    * Update the client's registration with input from the form
    */
+  const headers = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'Authorization': 'Bearer ' + client.registration_access_token
+  }
+
+  const clientCopy = __.clone(client)
+  delete clientCopy['client_id_issued_at']
+  delete clientCopy['client_secret_expires_at']
+  delete clientCopy['registration_client_uri']
+  // delete clientCopy['registration_access_token']
+  clientCopy.client_name = req.body.client_name
+  const updateResponse = request('PUT', client.registration_client_uri, {
+    headers,
+    body: JSON.stringify(clientCopy)
+  })
+  if (updateResponse.statusCode === 200) {
+    client = JSON.parse(updateResponse.getBody())
+    console.log(client)
+    res.render('index', { access_token, refresh_token, scope, client })
+  } else {
+    res.render('error', { error: 'Unable to update client ' + updateResponse.statusCode })
+  }
 })
 
 app.get('/unregister_client', function (req, res) {
@@ -219,28 +275,6 @@ app.get('/unregister_client', function (req, res) {
 })
 
 app.use('/', express.static('files/client'))
-
-var buildUrl = function (base, options, hash) {
-  var newUrl = url.parse(base, true)
-  delete newUrl.search
-  if (!newUrl.query) {
-    newUrl.query = {}
-  }
-  __.each(options, function (value, key, list) {
-    newUrl.query[key] = value
-  })
-  if (hash) {
-    newUrl.hash = hash
-  }
-
-  return url.format(newUrl)
-}
-
-var encodeClientCredentials = function (clientId, clientSecret) {
-  return Buffer.from(
-    querystring.escape(clientId) + ':' + querystring.escape(clientSecret)
-  ).toString('base64')
-}
 
 var server = app.listen(9000, 'localhost', function () {
   var host = server.address().address
