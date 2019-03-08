@@ -132,6 +132,35 @@ app.get('/callback', function (req, res) {
     /*
      * Parse and validate the ID token
      */
+    if (body.id_token) {
+      console.log('Got ID token: %s', body.id_token)
+
+      // clean previous login
+      userInfo = null
+      id_token = null
+
+      const pubKey = jose.KEYUTIL.getKey(rsaKey)
+      const tokenParts = body.id_token.split('.')
+      const payload = JSON.parse(base64url.decode(tokenParts[1]))
+      console.log('Payload', payload)
+
+      if (jose.jws.JWS.verify(body.id_token, pubKey, [rsaKey.alg])) {
+        console.log('Signature validated.')
+        if (payload.iss === 'http://localhost:9001/') {
+          if ((Array.isArray(payload.aud) && __.contains(payload.aud, client.client_id)) || payload.aud === client.client_id) {
+            const now = Math.floor(Date.now() / 1000)
+            if (payload.iat <= now && payload.exp >= now) {
+              console.log('Token valid!')
+              id_token = payload
+            }
+          }
+        }
+      }
+      console.log('userInfo', userInfo)
+      console.log('id_token', id_token)
+      res.render('userinfo', { userInfo, id_token });
+      return;
+    }
 
     res.render('index', {
       access_token: access_token,
@@ -176,6 +205,17 @@ app.get('/userinfo', function (req, res) {
   /*
    * Call the UserInfo endpoint and store/display the results
    */
+  const headers = {
+    'Authorization': 'Bearer ' + access_token
+  }
+  const resource = request('GET', authServer.userInfoEndpoint, { headers })
+  if (resource.statusCode >= 200 && resource.statusCode < 300) {
+    const data = JSON.parse(resource.getBody())
+    userInfo = data
+    res.render('userinfo', { userInfo, id_token })
+  } else {
+    res.render('error', { error: 'Unable to fetch user information' })
+  }
 })
 
 app.use('/', express.static('files/client'))

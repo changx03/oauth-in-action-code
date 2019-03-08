@@ -5,10 +5,8 @@ var randomstring = require('randomstring')
 var cons = require('consolidate')
 var nosql = require('nosql').load('database.nosql')
 var querystring = require('querystring')
-var qs = require('qs')
 var __ = require('underscore')
 __.string = require('underscore.string')
-var base64url = require('base64url')
 var jose = require('jsrsasign')
 
 var app = express()
@@ -54,7 +52,6 @@ var userInfo = {
     email: 'alice.wonderland@example.com',
     email_verified: true
   },
-
   bob: {
     sub: '1ZT5-OE63-57383B',
     preferred_username: 'bob',
@@ -78,10 +75,43 @@ var getClient = function (clientId) {
   })
 }
 
-var getProtectedResource = function (resourceId) {
-  return __.find(protectedResources, function (resource) {
-    return resource.resource_id == resourceId
+// var getProtectedResource = function (resourceId) {
+//   return __.find(protectedResources, function (resource) {
+//     return resource.resource_id == resourceId
+//   })
+// }
+
+var buildUrl = function (base, options, hash) {
+  var newUrl = url.parse(base, true)
+  delete newUrl.search
+  if (!newUrl.query) {
+    newUrl.query = {}
+  }
+  __.each(options, function (value, key) {
+    newUrl.query[key] = value
   })
+  if (hash) {
+    newUrl.hash = hash
+  }
+
+  return url.format(newUrl)
+}
+
+var getScopesFromForm = function (body) {
+  return __.filter(__.keys(body), function (s) {
+    return __.string.startsWith(s, 'scope_')
+  }).map(function (s) {
+    return s.slice('scope_'.length)
+  })
+}
+
+var decodeClientCredentials = function (auth) {
+  var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64')
+    .toString()
+    .split(':')
+  var clientId = querystring.unescape(clientCredentials[0])
+  var clientSecret = querystring.unescape(clientCredentials[1])
+  return { id: clientId, secret: clientSecret }
 }
 
 app.get('/', function (req, res) {
@@ -132,6 +162,7 @@ app.post('/approve', function (req, res) {
     return
   }
 
+  let urlParsed
   if (req.body.approve) {
     if (query.response_type == 'code') {
       // user approved access
@@ -145,7 +176,7 @@ app.post('/approve', function (req, res) {
       var cscope = client.scope ? client.scope.split(' ') : undefined
       if (__.difference(scope, cscope).length > 0) {
         // client asked for a scope it couldn't have
-        var urlParsed = buildUrl(query.redirect_uri, {
+        urlParsed = buildUrl(query.redirect_uri, {
           error: 'invalid_scope'
         })
         res.redirect(urlParsed)
@@ -155,21 +186,21 @@ app.post('/approve', function (req, res) {
       // save the code and request for later
       codes[code] = { request: query, scope: scope, user: user }
 
-      var urlParsed = buildUrl(query.redirect_uri, {
+      urlParsed = buildUrl(query.redirect_uri, {
         code: code,
         state: query.state
       })
       res.redirect(urlParsed)
     } else {
       // we got a response type we don't understand
-      var urlParsed = buildUrl(query.redirect_uri, {
+      urlParsed = buildUrl(query.redirect_uri, {
         error: 'unsupported_response_type'
       })
       res.redirect(urlParsed)
     }
   } else {
     // user denied access
-    var urlParsed = buildUrl(query.redirect_uri, {
+    urlParsed = buildUrl(query.redirect_uri, {
       error: 'access_denied'
     })
     res.redirect(urlParsed)
@@ -178,11 +209,13 @@ app.post('/approve', function (req, res) {
 
 app.post('/token', function (req, res) {
   var auth = req.headers['authorization']
+  let clientId
+  let clientSecret
   if (auth) {
     // check the auth header
     var clientCredentials = decodeClientCredentials(auth)
-    var clientId = clientCredentials.id
-    var clientSecret = clientCredentials.secret
+    clientId = clientCredentials.id
+    clientSecret = clientCredentials.secret
   }
 
   // otherwise, check the post body
@@ -194,8 +227,8 @@ app.post('/token', function (req, res) {
       return
     }
 
-    var clientId = req.body.client_id
-    var clientSecret = req.body.client_secret
+    clientId = req.body.client_id
+    clientSecret = req.body.client_secret
   }
 
   var client = getClient(clientId)
@@ -246,7 +279,31 @@ app.post('/token', function (req, res) {
         /*
          * Generate an ID token, if necessary
          */
-
+        if (__.contains(code.scope, 'openid') && code.user) {
+          const jwtHeader = {
+            typ: 'JWT',
+            alg: rsaKey.alg,
+            kid: rsaKey.kid
+          }
+          const jwtPayload = {
+            iss: 'http://localhost:9001/',
+            sub: code.user.sub,
+            aud: client['client_id'],
+            iat: Math.floor(Date.now() / 1000),
+            exp: Math.floor(Date.now() / 1000) + (5 * 60)
+          }
+          if (code.request.nonce) {
+            jwtPayload.nonce = code.request.nonce
+          }
+          const privateKey = jose.KEYUTIL.getKey(rsaKey)
+          const idToken = jose.jws.JWS.sign(
+            jwtHeader.alg,
+            JSON.stringify(jwtHeader),
+            JSON.stringify(jwtPayload),
+            privateKey
+          )
+          token_response['id_token'] = idToken
+        }
         res.status(200).json(token_response)
         console.log('Issued tokens for code %s', req.body.code)
       } else {
@@ -266,39 +323,6 @@ app.post('/token', function (req, res) {
     res.status(400).json({ error: 'unsupported_grant_type' })
   }
 })
-
-var buildUrl = function (base, options, hash) {
-  var newUrl = url.parse(base, true)
-  delete newUrl.search
-  if (!newUrl.query) {
-    newUrl.query = {}
-  }
-  __.each(options, function (value, key, list) {
-    newUrl.query[key] = value
-  })
-  if (hash) {
-    newUrl.hash = hash
-  }
-
-  return url.format(newUrl)
-}
-
-var getScopesFromForm = function (body) {
-  return __.filter(__.keys(body), function (s) {
-    return __.string.startsWith(s, 'scope_')
-  }).map(function (s) {
-    return s.slice('scope_'.length)
-  })
-}
-
-var decodeClientCredentials = function (auth) {
-  var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64')
-    .toString()
-    .split(':')
-  var clientId = querystring.unescape(clientCredentials[0])
-  var clientSecret = querystring.unescape(clientCredentials[1])
-  return { id: clientId, secret: clientSecret }
-}
 
 app.use('/', express.static('files/authorizationServer'))
 

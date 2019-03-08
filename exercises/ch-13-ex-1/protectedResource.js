@@ -1,15 +1,8 @@
 var express = require('express')
-var url = require('url')
 var bodyParser = require('body-parser')
-var randomstring = require('randomstring')
 var cons = require('consolidate')
 var nosql = require('nosql').load('database.nosql')
-var qs = require('qs')
-var querystring = require('querystring')
-var request = require('sync-request')
 var __ = require('underscore')
-var base64url = require('base64url')
-var jose = require('jsrsasign')
 var cors = require('cors')
 
 var app = express()
@@ -81,6 +74,54 @@ var userInfoEndpoint = function (req, res) {
   /*
    * Implement the UserInfo Endpoint
    */
+  if (!__.contains(req.access_token.scope, 'openid')) {
+    res.status(403).end()
+    return
+  }
+
+  const user = req.access_token.user;
+  if (!user) {
+    res.status(404).end();
+    return;
+  }
+
+  const out = {}
+  __.each(req.access_token.scope, function (scope) {
+    if (scope === 'openid') {
+      __.each(['sub'], function (claim) {
+        if (user[claim]) {
+          out[claim] = user[claim]
+        }
+      })
+    } else if (scope === 'profile') {
+      __.each(['name', 'family_name', 'given_name', 'middle_name', 'nickname',
+        'preferred_username', 'profile', 'picture', 'website', 'gender',
+        'birthdate', 'zoneinfo', 'locale', 'updated_at'], function (claim) {
+          if (user[claim]) {
+            out[claim] = user[claim]
+          }
+        })
+    } else if (scope === 'email') {
+      __.each(['email', 'email_verified'], function (claim) {
+        if (user[claim]) {
+          out[claim] = user[claim]
+        }
+      })
+    } else if (scope == 'address') {
+      __.each(['address'], function (claim) {
+        if (user[claim]) {
+          out[claim] = user[claim];
+        }
+      });
+    } else if (scope == 'phone') {
+      __.each(['phone_number', 'phone_number_verified'], function (claim) {
+        if (user[claim]) {
+          out[claim] = user[claim];
+        }
+      });
+    }
+  })
+  res.status(200).json(out)
 }
 
 app.get('/userinfo', getAccessToken, requireAccessToken, userInfoEndpoint)
